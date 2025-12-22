@@ -51,6 +51,11 @@
             </b-field>
           </b-field>
         </div>
+        </div>
+        <p class="has-text-right is-size-7 has-text-grey mt-1" v-if="saveStatus">
+          <span v-if="saveStatus === 'saving'">Saving...</span>
+          <span v-if="saveStatus === 'saved'">Saved</span>
+        </p>
       </div>
     </header>
 
@@ -343,6 +348,8 @@ export default Vue.extend({
 
   data() {
     return {
+      saveStatus: '',
+          
       contentTypes: Object.freeze({
         richtext: this.$t('campaigns.richText'),
         html: this.$t('campaigns.rawHTML'),
@@ -628,10 +635,25 @@ export default Vue.extend({
           this.form.archiveSlug = d.archiveSlug;
           this.form.attribsStr = d.attribs ? JSON.stringify(d.attribs, null, 4) : '{}';
 
-          this.$utils.toast(this.$t(typMsg, { name: d.name }));
+          if (typ !== 'silent') {
+            this.$utils.toast(this.$t(typMsg, { name: d.name }));
+          }
           resolve();
         });
       });
+    },
+
+    debounce(func, wait) {
+      let timeout;
+      return function (...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+      };
+    },
+
+    autoSave() {
+      // Placeholder, overwritten in mounted
     },
 
     onUpdateCampaignArchive() {
@@ -755,9 +777,30 @@ export default Vue.extend({
         this.form.sendAtDate = null;
       }
     },
+
+    'form.content': {
+      handler() {
+        if (!this.isEditing || !this.data.id) {
+          return;
+        }
+
+        this.saveStatus = 'saving';
+        this.autoSave();
+      },
+      deep: true,
+    },
   },
 
   mounted() {
+    this.autoSave = this.debounce(() => {
+      this.updateCampaign('silent').then(() => {
+        this.saveStatus = 'saved';
+        setTimeout(() => {
+          this.saveStatus = '';
+        }, 2000);
+      });
+    }, 2000);
+
     window.onbeforeunload = () => this.isUnsaved() || null;
 
     // Fill default form fields.

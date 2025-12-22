@@ -213,6 +213,13 @@ export default {
           this.isMediaVisible = true;
           this.imageCallack = callback;
         },
+
+        mobile: {
+          menubar: false,
+          toolbar_mode: 'scrolling',
+          toolbar: 'undo redo | bold italic underline strikethrough | link image | bullist numlist | styleselect | removeformat',
+          min_height: 400,
+        },
       };
 
       this.isRichtextReady = true;
