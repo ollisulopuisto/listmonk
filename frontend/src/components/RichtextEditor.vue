@@ -191,7 +191,7 @@ export default {
         content_css: false,
         content_style: `
           body { font-family: 'Inter', sans-serif; font-size: 15px; }
-          img { max-width: 100%; }
+          img { max-width: 100%; height: auto; }
           img.img-float-left { float: left; margin: 0 1em 1em 0; }
           img.img-float-right { float: right; margin: 0 0 1em 1em; }
           a { color: ${colors.primary}; }
