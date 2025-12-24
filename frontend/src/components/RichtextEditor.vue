@@ -191,7 +191,7 @@ export default {
         content_css: false,
         content_style: `
           body { font-family: 'Inter', sans-serif; font-size: 15px; }
-          img { max-width: 100%; }
+          img { max-width: 100%; height: auto; }
           a { color: ${colors.primary}; }
           table, td { border-color: #ccc;}
         `,
