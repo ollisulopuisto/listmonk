@@ -217,8 +217,14 @@ export default {
         mobile: {
           menubar: false,
           toolbar_mode: 'scrolling',
-          toolbar: 'undo redo | bold italic underline strikethrough | link image | bullist numlist | styleselect | removeformat',
+          toolbar: 'undo redo | bold italic link | bullist numlist | removeformat',
           min_height: 400,
+          content_style: `
+            body { font-family: 'Inter', sans-serif; font-size: 15px; margin: 10px; }
+            img { max-width: 100% !important; height: auto !important; }
+            table { max-width: 100% !important; }
+            a { color: ${colors.primary}; }
+          `,
         },
       };
 
