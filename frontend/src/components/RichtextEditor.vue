@@ -174,7 +174,7 @@ export default {
         browser_spellcheck: true,
         browser_spellcheck: true,
         height: '75vh',
-        toolbar_sticky: false,
+        toolbar_sticky: true,
         entity_encoding: 'raw',
         convert_urls: true,
         plugins: [

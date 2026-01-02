@@ -75,8 +75,8 @@
         </div>
       </template>
 
-      <b-table-column v-slot="props" cell-class="status" field="status" :label="$t('globals.fields.status')" width="10%"
-        sortable :td-attrs="$utils.tdID" header-class="cy-status">
+      <b-table-column v-slot="props" cell-class="status is-hidden-mobile" field="status" :label="$t('globals.fields.status')" width="10%"
+        sortable :td-attrs="$utils.tdID" header-class="cy-status is-hidden-mobile" :visible="!isMobile">
         <div>
           <p>
             <router-link :to="{ name: 'campaign', params: { id: props.row.id } }">
@@ -103,6 +103,22 @@
       <b-table-column v-slot="props" field="name" :label="$t('globals.fields.name')" width="25%" sortable
         header-class="cy-name">
         <div>
+          <p class="mb-1 is-hidden-tablet">
+            <router-link :to="{ name: 'campaign', params: { id: props.row.id } }">
+              <b-tag :class="props.row.status">
+                {{ $t(`campaigns.status.${props.row.status}`) }}
+              </b-tag>
+            </router-link>
+            
+            <span class="is-size-7 ml-2 has-text-grey" v-if="props.row.lists.length">
+              {{ props.row.lists.length }} {{ props.row.lists.length === 1 ? 'list' : 'lists' }}
+            </span>
+
+            <span class="spinner is-tiny" v-if="isRunning(props.row.id)">
+              <b-loading :is-full-page="false" active />
+            </span>
+          </p>
+
           <p>
             <b-tag v-if="props.row.type === 'optin'" class="is-small">
               {{ $t('lists.optin') }}
@@ -122,7 +138,7 @@
           </b-taglist>
         </div>
       </b-table-column>
-      <b-table-column v-slot="props" cell-class="lists" field="lists" :label="$t('globals.terms.lists')" width="15%">
+      <b-table-column v-slot="props" cell-class="lists is-hidden-mobile" field="lists" :label="$t('globals.terms.lists')" width="15%" header-class="is-hidden-mobile" :visible="!isMobile">
         <ul>
           <li v-for="l in props.row.lists" :key="l.id">
             <router-link :to="{ name: 'subscribers_list', params: { listID: l.id } }">
@@ -134,71 +150,120 @@
       <b-table-column v-slot="props" field="created_at" :label="$t('campaigns.timestamps')" width="19%" sortable
         header-class="cy-timestamp">
         <div class="fields timestamps" :set="stats = getCampaignStats(props.row)">
-          <p>
-            <label for="#">{{ $t('globals.fields.createdAt') }}</label>
-            <span>{{ $utils.niceDate(props.row.createdAt, true) }}</span>
-          </p>
-          <p v-if="stats.startedAt">
-            <label for="#">{{ $t('campaigns.startedAt') }}</label>
-            <span>{{ $utils.niceDate(stats.startedAt, true) }}</span>
-          </p>
-          <p v-if="isDone(props.row)">
-            <label for="#">{{ $t('campaigns.ended') }}</label>
-            <span>{{ $utils.niceDate(stats.updatedAt, true) }}</span>
-          </p>
-          <p v-if="stats.startedAt && stats.updatedAt" class="is-capitalized">
-            <label for="#"><b-icon icon="alarm" size="is-small" /></label>
-            <span>{{ $utils.duration(stats.startedAt, stats.updatedAt) }}</span>
-          </p>
+          <!-- Desktop View -->
+          <div class="is-hidden-mobile">
+            <p>
+              <label for="#">{{ $t('globals.fields.createdAt') }}</label>
+              <span>{{ $utils.niceDate(props.row.createdAt, true) }}</span>
+            </p>
+            <p v-if="stats.startedAt">
+              <label for="#">{{ $t('campaigns.startedAt') }}</label>
+              <span>{{ $utils.niceDate(stats.startedAt, true) }}</span>
+            </p>
+            <p v-if="isDone(props.row)">
+              <label for="#">{{ $t('campaigns.ended') }}</label>
+              <span>{{ $utils.niceDate(stats.updatedAt, true) }}</span>
+            </p>
+            <p v-if="stats.startedAt && stats.updatedAt" class="is-capitalized">
+              <label for="#"><b-icon icon="alarm" size="is-small" /></label>
+              <span>{{ $utils.duration(stats.startedAt, stats.updatedAt) }}</span>
+            </p>
+          </div>
+
+          <!-- Mobile Compact View -->
+          <div class="is-hidden-tablet is-size-7 mobile-timestamps">
+             <div class="columns is-mobile is-multiline is-gapless mb-0">
+               <div class="column is-6">
+                 <span class="has-text-grey">{{ $t('globals.fields.createdAt') }}:</span>
+                 <br/>
+                 {{ $utils.niceDate(props.row.createdAt, true) }}
+               </div>
+               <div class="column is-6" v-if="stats.startedAt">
+                 <span class="has-text-grey">{{ $t('campaigns.startedAt') }}:</span>
+                 <br/>
+                 {{ $utils.niceDate(stats.startedAt, true) }}
+               </div>
+               <div class="column is-6 mt-1" v-if="isDone(props.row)">
+                  <span class="has-text-grey">{{ $t('campaigns.ended') }}:</span>
+                  <br/>
+                  {{ $utils.niceDate(stats.updatedAt, true) }}
+               </div>
+             </div>
+          </div>
         </div>
       </b-table-column>
 
       <b-table-column v-slot="props" field="stats" :label="$t('campaigns.stats')" width="15%">
         <div class="fields stats" :set="stats = getCampaignStats(props.row)">
-          <p>
-            <label for="#">{{ $t('campaigns.views') }}</label>
-            <span>{{ $utils.formatNumber(props.row.views) }}</span>
-          </p>
-          <p>
-            <label for="#">{{ $t('campaigns.clicks') }}</label>
-            <span>{{ $utils.formatNumber(props.row.clicks) }}</span>
-          </p>
-          <p>
-            <label for="#">{{ $t('campaigns.sent') }}</label>
-            <span>
-              {{ $utils.formatNumber(stats.sent) }} /
-              {{ $utils.formatNumber(stats.toSend) }}
-            </span>
-          </p>
-          <p>
-            <label for="#">{{ $t('globals.terms.bounces') }}</label>
-            <span>
-              <router-link :to="{ name: 'bounces', query: { campaign_id: props.row.id } }">
-                {{ $utils.formatNumber(props.row.bounces) }}
-              </router-link>
-            </span>
-          </p>
-          <p v-if="stats.rate">
-            <label for="#"><b-icon icon="speedometer" size="is-small" /></label>
-            <span class="send-rate">
-              <b-tooltip
-                :label="`${stats.netRate} / ${$t('campaigns.rateMinuteShort')} @ ${$utils.duration(stats.startedAt, stats.updatedAt)}`"
-                type="is-dark">
-                {{ stats.rate.toFixed(0) }} / {{ $t('campaigns.rateMinuteShort') }}
-              </b-tooltip>
-            </span>
-          </p>
-          <p v-if="isRunning(props.row.id)">
-            <label for="#">
-              {{ $t('campaigns.progress') }}
-              <span class="spinner is-tiny">
-                <b-loading :is-full-page="false" active />
+          <!-- Desktop View -->
+          <div class="is-hidden-mobile">
+            <p>
+              <label for="#">{{ $t('campaigns.views') }}</label>
+              <span>{{ $utils.formatNumber(props.row.views) }}</span>
+            </p>
+            <p>
+              <label for="#">{{ $t('campaigns.clicks') }}</label>
+              <span>{{ $utils.formatNumber(props.row.clicks) }}</span>
+            </p>
+            <p>
+              <label for="#">{{ $t('campaigns.sent') }}</label>
+              <span>
+                {{ $utils.formatNumber(stats.sent) }} /
+                {{ $utils.formatNumber(stats.toSend) }}
               </span>
-            </label>
-            <span>
-              <b-progress :value="stats.sent / stats.toSend * 100" size="is-small" />
-            </span>
-          </p>
+            </p>
+            <p>
+              <label for="#">{{ $t('globals.terms.bounces') }}</label>
+              <span>
+                <router-link :to="{ name: 'bounces', query: { campaign_id: props.row.id } }">
+                  {{ $utils.formatNumber(props.row.bounces) }}
+                </router-link>
+              </span>
+            </p>
+            <p v-if="stats.rate">
+              <label for="#"><b-icon icon="speedometer" size="is-small" /></label>
+              <span class="send-rate">
+                <b-tooltip
+                  :label="`${stats.netRate} / ${$t('campaigns.rateMinuteShort')} @ ${$utils.duration(stats.startedAt, stats.updatedAt)}`"
+                  type="is-dark">
+                  {{ stats.rate.toFixed(0) }} / {{ $t('campaigns.rateMinuteShort') }}
+                </b-tooltip>
+              </span>
+            </p>
+            <p v-if="isRunning(props.row.id)">
+              <label for="#">
+                {{ $t('campaigns.progress') }}
+                <span class="spinner is-tiny">
+                  <b-loading :is-full-page="false" active />
+                </span>
+              </label>
+              <span>
+                <b-progress :value="stats.sent / stats.toSend * 100" size="is-small" />
+              </span>
+            </p>
+          </div>
+
+          <!-- Mobile Compact View -->
+          <div class="is-hidden-tablet mobile-stats">
+            <div class="columns is-mobile is-multiline is-gapless mb-0">
+               <div class="column is-6 mb-1">
+                 <span class="has-text-grey">{{ $t('campaigns.views') }}:</span> {{ $utils.formatNumber(props.row.views) }}
+               </div>
+               <div class="column is-6 mb-1">
+                 <span class="has-text-grey">{{ $t('campaigns.clicks') }}:</span> {{ $utils.formatNumber(props.row.clicks) }}
+               </div>
+               <div class="column is-6 mb-1">
+                 <span class="has-text-grey">{{ $t('campaigns.sent') }}:</span> {{ $utils.formatNumber(stats.sent) }} / {{ $utils.formatNumber(stats.toSend) }}
+               </div>
+               <div class="column is-6 mb-1">
+                 <span class="has-text-grey">{{ $t('globals.terms.bounces') }}:</span> {{ $utils.formatNumber(props.row.bounces) }}
+               </div>
+            </div>
+             <div v-if="isRunning(props.row.id)" class="mt-2">
+                <b-progress :value="stats.sent / stats.toSend * 100" size="is-small" />
+                <span class="is-size-7 has-text-grey">{{ Math.round(stats.sent / stats.toSend * 100) }}%</span>
+             </div>
+          </div>
         </div>
       </b-table-column>
 
@@ -327,6 +392,7 @@ export default Vue.extend({
       listDebounce: null,
       pollID: null,
       campaignStatsData: {},
+      isMobile: false,
 
       // Table bulk row selection states.
       bulk: {
@@ -571,6 +637,10 @@ export default Vue.extend({
         { num: this.numSelectedCampaigns, name: name.toLowerCase() },
       ), fn);
     },
+
+    onResize() {
+      this.isMobile = window.innerWidth < 1024;
+    },
   },
 
   computed: {
@@ -584,10 +654,25 @@ export default Vue.extend({
   mounted() {
     this.getCampaigns();
     this.pollStats();
+
+    this.onResize();
+    window.addEventListener('resize', this.onResize);
   },
 
   destroyed() {
+    window.removeEventListener('resize', this.onResize);
     clearInterval(this.pollID);
   },
 });
 </script>
+
+<style lang="scss" scoped>
+::v-deep .table-mobile-cards .detail {
+  margin-bottom: 0.5rem !important;
+}
+
+::v-deep .table-mobile-cards .detail .detail-content {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+</style>
