@@ -103,14 +103,15 @@ export const getHealth = () => http.get(
 export const reloadApp = () => http.post('/api/admin/reload');
 
 // Dashboard
-export const getDashboardCounts = () => http.get(
+// Dashboard
+export const getDashboardCounts = (params) => http.get(
   '/api/dashboard/counts',
-  { loading: models.dashboard },
+  { params, loading: models.dashboard },
 );
 
-export const getDashboardCharts = () => http.get(
+export const getDashboardCharts = (params) => http.get(
   '/api/dashboard/charts',
-  { loading: models.dashboard },
+  { params, loading: models.dashboard },
 );
 
 // Lists.

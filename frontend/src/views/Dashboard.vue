@@ -1,10 +1,29 @@
 <template>
   <section class="dashboard content">
+
     <header class="columns">
       <div class="column is-two-thirds">
         <h1 class="title is-5">
           {{ $utils.niceDate(new Date()) }}
         </h1>
+      </div>
+      <div class="column is-one-third">
+        <b-field>
+          <b-autocomplete
+            :data="lists"
+            clearable
+            placeholder="Filter by list"
+            field="name"
+            icon="magnify"
+            :loading="isListsLoading"
+            @typing="onListSearch"
+            @select="onListSelect">
+            <template slot-scope="props">
+              {{ props.option.name }}
+            </template>
+            <template slot="empty">No results found</template>
+          </b-autocomplete>
+        </b-field>
       </div>
     </header>
 
@@ -172,6 +191,10 @@ export default Vue.extend({
         campaigns: {},
         messages: 0,
       },
+      lists: [],
+      selectedList: null,
+      isListsLoading: false,
+      debounce: null,
     };
   },
 
@@ -193,6 +216,47 @@ export default Vue.extend({
         ],
       };
     },
+
+    onListSearch(query) {
+      if (!query) {
+        this.lists = [];
+        return;
+      }
+      if (this.debounce) clearTimeout(this.debounce);
+      this.debounce = setTimeout(() => {
+        this.isListsLoading = true;
+        this.$api.getLists({ query, per_page: 5 }).then((data) => {
+          this.lists = data.results;
+          this.isListsLoading = false;
+        });
+      }, 300);
+    },
+
+    onListSelect(option) {
+      this.selectedList = option;
+      const id = option ? option.id : 0;
+      this.loadData(id);
+    },
+
+    loadData(listId = 0) {
+      this.isCountsLoading = true;
+      this.isChartsLoading = true;
+
+      const params = listId ? { list_id: listId } : {};
+
+      // Pull the counts.
+      this.$api.getDashboardCounts(params).then((data) => {
+        this.counts = data;
+        this.isCountsLoading = false;
+      });
+
+      // Pull the charts.
+      this.$api.getDashboardCharts(params).then((data) => {
+        this.isChartsLoading = false;
+        this.campaignViews = this.makeChart(data.campaignViews);
+        this.campaignClicks = this.makeChart(data.linkClicks);
+      });
+    },
   },
 
   computed: {
@@ -203,18 +267,7 @@ export default Vue.extend({
   },
 
   mounted() {
-    // Pull the counts.
-    this.$api.getDashboardCounts().then((data) => {
-      this.counts = data;
-      this.isCountsLoading = false;
-    });
-
-    // Pull the charts.
-    this.$api.getDashboardCharts().then((data) => {
-      this.isChartsLoading = false;
-      this.campaignViews = this.makeChart(data.campaignViews);
-      this.campaignClicks = this.makeChart(data.linkClicks);
-    });
+    this.loadData();
   },
 });
 </script>

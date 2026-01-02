@@ -2,7 +2,7 @@
   <div class="richtext-editor" v-if="isRichtextReady">
     <tiny-mce v-model="computedValue" :disabled="disabled" :init="richtextConf" />
 
-    <b-modal scroll="keep" :width="1200" :aria-modal="true" :active.sync="isRichtextSourceVisible">
+    <b-modal :width="1200" :aria-modal="true" :active.sync="isRichtextSourceVisible">
       <div>
         <section expanded class="modal-card-body preview">
           <code-editor lang="html" v-model="richTextSourceBody" key="richtext-source" />
@@ -21,7 +21,7 @@
       </div>
     </b-modal>
 
-    <b-modal scroll="keep" :width="750" :aria-modal="true" :active.sync="isInsertHTMLVisible">
+    <b-modal :width="750" :aria-modal="true" :active.sync="isInsertHTMLVisible">
       <div>
         <section expanded class="modal-card-body preview">
           <code-editor lang="html" v-model="insertHTMLSnippet" key="richtext-snippet" />
@@ -41,7 +41,7 @@
     </b-modal>
 
     <!-- image picker -->
-    <b-modal scroll="keep" :aria-modal="true" :active.sync="isMediaVisible" :width="900">
+    <b-modal :aria-modal="true" :active.sync="isMediaVisible" :width="900">
       <div class="modal-card content" style="width: auto">
         <section expanded class="modal-card-body">
           <media is-modal @selected="onMediaSelect" />
@@ -173,7 +173,7 @@ export default {
 
         browser_spellcheck: true,
         min_height: 500,
-        toolbar_sticky: true,
+        toolbar_sticky: false,
         entity_encoding: 'raw',
         convert_urls: true,
         plugins: [
@@ -217,6 +217,7 @@ export default {
         mobile: {
           menubar: false,
           toolbar_mode: 'scrolling',
+          toolbar_location: 'bottom',
           toolbar: 'undo redo | bold italic link | bullist numlist | removeformat',
           min_height: 400,
           content_style: `
