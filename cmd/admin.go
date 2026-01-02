@@ -82,7 +82,8 @@ func (a *App) GetServerConfig(c echo.Context) error {
 // GetDashboardCharts returns chart data points to render ont he dashboard.
 func (a *App) GetDashboardCharts(c echo.Context) error {
 	// Get the chart data from the DB.
-	out, err := a.core.GetDashboardCharts()
+	listID, _ := strconv.Atoi(c.QueryParam("list_id"))
+	out, err := a.core.GetDashboardCharts(listID)
 	if err != nil {
 		return err
 	}
@@ -93,7 +94,8 @@ func (a *App) GetDashboardCharts(c echo.Context) error {
 // GetDashboardCounts returns stats counts to show on the dashboard.
 func (a *App) GetDashboardCounts(c echo.Context) error {
 	// Get the chart data from the DB.
-	out, err := a.core.GetDashboardCounts()
+	listID, _ := strconv.Atoi(c.QueryParam("list_id"))
+	out, err := a.core.GetDashboardCounts(listID)
 	if err != nil {
 		return err
 	}
