@@ -6,8 +6,21 @@
     <hr />
 
     <form @submit.prevent="onSubmit">
-      <div class="columns">
-        <div class="column is-6">
+      <div class="columns is-variable is-2">
+        <div class="column is-3">
+          <b-field :label="$t('globals.terms.list')" label-position="on-border">
+            <b-autocomplete v-model="listQuery" :data="lists" clearable :placeholder="$t('globals.terms.list')"
+              field="name" icon="magnify" open-on-focus :loading="isListsLoading" @typing="onListSearch"
+              @select="(option) => form.list = option">
+              <template slot-scope="props">
+                {{ props.option.name }}
+              </template>
+              <template slot="empty">No results found</template>
+            </b-autocomplete>
+          </b-field>
+        </div>
+
+        <div class="column is-4">
           <b-field :label="$t('globals.terms.campaigns')" label-position="on-border">
             <b-taginput v-model="form.campaigns" :data="queriedCampaigns" name="campaigns" ellipsis icon="tag-outline"
               :placeholder="$t('globals.terms.campaigns')" autocomplete :allow-new="false"
@@ -17,25 +30,24 @@
 
         <div class="column is-5">
           <div class="columns">
-            <div class="column is-6">
+            <div class="column is-5">
               <b-field data-cy="from" :label="$t('analytics.fromDate')" label-position="on-border">
                 <b-datetimepicker v-model="form.from" icon="calendar-clock" :timepicker="{ hourFormat: '24' }"
                   :datetime-formatter="formatDateTime" @input="onFromDateChange" />
               </b-field>
             </div>
-            <div class="column is-6">
+            <div class="column is-5">
               <b-field data-cy="to" :label="$t('analytics.toDate')" label-position="on-border">
                 <b-datetimepicker v-model="form.to" icon="calendar-clock" :timepicker="{ hourFormat: '24' }"
                   :datetime-formatter="formatDateTime" @input="onToDateChange" />
               </b-field>
             </div>
+            <div class="column is-2">
+              <b-button native-type="submit" type="is-primary" icon-left="magnify"
+                :disabled="form.campaigns.length === 0" data-cy="btn-search" />
+            </div>
           </div><!-- columns -->
         </div><!-- columns -->
-
-        <div class="column is-1">
-          <b-button native-type="submit" type="is-primary" icon-left="magnify" :disabled="form.campaigns.length === 0"
-            data-cy="btn-search" />
-        </div>
       </div><!-- columns -->
     </form>
 
@@ -97,6 +109,11 @@ export default Vue.extend({
       isSearchLoading: false,
       queriedCampaigns: [],
 
+      lists: [],
+      listQuery: '',
+      isListsLoading: false,
+      listDebounce: null,
+
       // Data for each view.
       counts: {
         views: 0,
@@ -148,6 +165,7 @@ export default Vue.extend({
 
       form: {
         campaigns: [],
+        list: null,
         from: null,
         to: null,
       },
@@ -251,6 +269,7 @@ export default Vue.extend({
       this.isSearchLoading = true;
       this.$api.getCampaigns({
         query: q,
+        list_id: this.form.list ? this.form.list.id : 0,
         order_by: 'created_at',
         order: 'DESC',
       }).then((data) => {
@@ -287,6 +306,22 @@ export default Vue.extend({
       if (bars.length > 0) {
         window.open(this.urls[bars[0].index], '_blank', 'noopener noreferrer');
       }
+    },
+
+    onListSearch(query) {
+      if (!query) {
+        this.lists = [];
+        this.form.list = null;
+        return;
+      }
+      if (this.listDebounce) clearTimeout(this.listDebounce);
+      this.listDebounce = setTimeout(() => {
+        this.isListsLoading = true;
+        this.$api.getLists({ query, per_page: 5 }).then((data) => {
+          this.lists = data.results;
+          this.isListsLoading = false;
+        });
+      }, 300);
     },
   },
 
