@@ -60,7 +60,6 @@ import 'tinymce';
 import 'tinymce/icons/default';
 import 'tinymce/plugins/anchor';
 import 'tinymce/plugins/autolink';
-import 'tinymce/plugins/autoresize';
 import 'tinymce/plugins/charmap';
 import 'tinymce/plugins/colorpicker';
 import 'tinymce/plugins/contextmenu';
@@ -80,6 +79,7 @@ import 'tinymce/plugins/textcolor';
 import 'tinymce/plugins/visualblocks';
 import 'tinymce/plugins/visualchars';
 import 'tinymce/plugins/wordcount';
+import 'tinymce/plugins/quickbars';
 import 'tinymce/skins/ui/oxide/skin.css';
 import 'tinymce/themes/silver';
 
@@ -172,15 +172,18 @@ export default {
         },
 
         browser_spellcheck: true,
-        min_height: 500,
+        browser_spellcheck: true,
+        height: '75vh',
         toolbar_sticky: false,
         entity_encoding: 'raw',
         convert_urls: true,
         plugins: [
-          'anchor', 'autoresize', 'autolink', 'charmap', 'emoticons', 'fullscreen',
+          'anchor', 'autolink', 'charmap', 'emoticons', 'fullscreen',
           'help', 'hr', 'image', 'imagetools', 'link', 'lists', 'paste', 'searchreplace',
-          'table', 'visualblocks', 'visualchars', 'wordcount',
+          'table', 'visualblocks', 'visualchars', 'wordcount', 'quickbars',
         ],
+        quickbars_insert_toolbar: false,
+        quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
         toolbar: `undo redo | formatselect styleselect fontsizeselect |
                   bold italic underline strikethrough forecolor backcolor subscript superscript |
                   alignleft aligncenter alignright alignjustify |
@@ -217,8 +220,7 @@ export default {
         mobile: {
           menubar: false,
           toolbar_mode: 'scrolling',
-          toolbar_location: 'bottom',
-          toolbar: 'undo redo | bold italic link | bullist numlist | removeformat',
+          toolbar: 'undo redo | image | bold italic link | bullist numlist | removeformat',
           min_height: 400,
           content_style: `
             body { font-family: 'Inter', sans-serif; font-size: 15px; margin: 10px; }
