@@ -75,11 +75,12 @@ func (a *App) GetCampaigns(c echo.Context) error {
 		query     = strings.TrimSpace(c.FormValue("query"))
 		orderBy   = c.FormValue("order_by")
 		order     = c.FormValue("order")
+		listID, _ = strconv.Atoi(c.FormValue("list_id"))
 		noBody, _ = strconv.ParseBool(c.QueryParam("no_body"))
 	)
 
 	// Query and retrieve campaigns from the DB.
-	res, total, err := a.core.QueryCampaigns(query, status, tags, orderBy, order, hasAllPerm, permittedLists, pg.Offset, pg.Limit)
+	res, total, err := a.core.QueryCampaigns(query, status, tags, orderBy, order, listID, hasAllPerm, permittedLists, pg.Offset, pg.Limit)
 	if err != nil {
 		return err
 	}

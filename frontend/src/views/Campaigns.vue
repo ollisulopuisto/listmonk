@@ -25,14 +25,36 @@
         <div class="columns">
           <div class="column is-6">
             <form @submit.prevent="getCampaigns">
-              <div>
-                <b-field>
-                  <b-input v-model="queryParams.query" name="query" expanded
-                    :placeholder="$t('campaigns.queryPlaceholder')" icon="magnify" ref="query" />
-                  <p class="controls">
-                    <b-button native-type="submit" type="is-primary" icon-left="magnify" />
-                  </p>
-                </b-field>
+              <div class="columns is-variable is-2">
+                <div class="column is-5">
+                  <b-field>
+                    <b-autocomplete
+                      v-model="listQuery"
+                      :data="lists"
+                      clearable
+                      placeholder="Filter by list"
+                      field="name"
+                      icon="magnify"
+                      open-on-focus
+                      :loading="isListsLoading"
+                      @typing="onListSearch"
+                      @select="onListSelect">
+                      <template slot-scope="props">
+                        {{ props.option.name }}
+                      </template>
+                      <template slot="empty">No results found</template>
+                    </b-autocomplete>
+                  </b-field>
+                </div>
+                <div class="column">
+                  <b-field>
+                    <b-input v-model="queryParams.query" name="query" expanded
+                      :placeholder="$t('campaigns.queryPlaceholder')" icon="magnify" ref="query" />
+                    <p class="controls">
+                      <b-button native-type="submit" type="is-primary" icon-left="magnify" />
+                    </p>
+                  </b-field>
+                </div>
               </div>
             </form>
           </div>
@@ -297,7 +319,12 @@ export default Vue.extend({
         query: '',
         orderBy: 'created_at',
         order: 'desc',
+        list_id: 0,
       },
+      lists: [],
+      listQuery: '', // Helper for autocomplete text
+      isListsLoading: false,
+      listDebounce: null,
       pollID: null,
       campaignStatsData: {},
 
@@ -358,6 +385,28 @@ export default Vue.extend({
       this.getCampaigns();
     },
 
+    onListSearch(query) {
+      if (!query) {
+        this.lists = [];
+        this.queryParams.list_id = 0;
+        this.getCampaigns();
+        return;
+      }
+      if (this.listDebounce) clearTimeout(this.listDebounce);
+      this.listDebounce = setTimeout(() => {
+        this.isListsLoading = true;
+        this.$api.getLists({ query, per_page: 5 }).then((data) => {
+          this.lists = data.results;
+          this.isListsLoading = false;
+        });
+      }, 300);
+    },
+
+    onListSelect(option) {
+      this.queryParams.list_id = option ? option.id : 0;
+      this.getCampaigns();
+    },
+
     // Campaign actions.
     previewCampaign(c) {
       this.previewItem = c;
@@ -373,6 +422,7 @@ export default Vue.extend({
         query: this.queryParams.query.replace(/[^\p{L}\p{N}\s]/gu, ' '),
         order_by: this.queryParams.orderBy,
         order: this.queryParams.order,
+        list_id: this.queryParams.list_id,
         no_body: true,
       });
     },

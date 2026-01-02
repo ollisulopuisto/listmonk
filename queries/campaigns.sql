@@ -80,6 +80,10 @@ WHERE ($1 = 0 OR id = $1)
             SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($6::INT[])
         )
     )
+    -- Filter by specific list ID.
+    AND ($9 = 0 OR EXISTS (
+        SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = $9
+    ))
 ORDER BY %order% OFFSET $7 LIMIT (CASE WHEN $8 < 1 THEN NULL ELSE $8 END);
 
 -- name: get-campaign
