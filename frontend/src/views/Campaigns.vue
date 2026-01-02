@@ -1,13 +1,13 @@
 <template>
   <section class="campaigns">
-    <header class="columns page-header">
-      <div class="column is-10">
+    <header class="columns page-header is-multiline is-mobile-reversed">
+      <div class="column is-8-desktop is-12-mobile">
         <h1 class="title is-4">
           {{ $t('globals.terms.campaigns') }}
           <span v-if="!isNaN(campaigns.total)">({{ campaigns.total }})</span>
         </h1>
       </div>
-      <div class="column has-text-right">
+      <div class="column is-4-desktop is-12-mobile has-text-right-desktop has-text-left-mobile">
         <b-field v-if="$can('campaigns:manage')" expanded>
           <b-button expanded :to="{ name: 'campaign', params: { id: 'new' } }" tag="router-link" class="btn-new"
             type="is-primary" icon-left="plus" data-cy="btn-new">
@@ -22,11 +22,11 @@
       pagination-position="both" @page-change="onPageChange" :current-page="queryParams.page"
       :per-page="campaigns.perPage" :total="campaigns.total" hoverable checkable backend-sorting @sort="onSort">
       <template #top-left>
-        <div class="columns">
-          <div class="column is-6">
+        <div class="columns is-multiline">
+          <div class="column is-12-mobile is-8-tablet">
             <form @submit.prevent="getCampaigns">
-              <div class="columns is-variable is-2">
-                <div class="column is-5">
+              <div class="columns is-variable is-2 is-mobile-multiline">
+                <div class="column is-12-mobile is-5-tablet">
                   <b-field>
                     <b-autocomplete
                       v-model="listQuery"
@@ -46,7 +46,7 @@
                     </b-autocomplete>
                   </b-field>
                 </div>
-                <div class="column">
+                <div class="column is-12-mobile">
                   <b-field>
                     <b-input v-model="queryParams.query" name="query" expanded
                       :placeholder="$t('campaigns.queryPlaceholder')" icon="magnify" ref="query" />
