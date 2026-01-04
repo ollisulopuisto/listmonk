@@ -69,6 +69,7 @@ type twofaTpl struct {
 	Description string
 	Token       string
 	NextURI     string
+	Remember    bool
 	Error       string
 }
 
@@ -125,14 +126,20 @@ func (a *App) LoginSetupPage(c echo.Context) error {
 
 // TwofaPage renders the 2FA verification page and handles the 2FA form submission.
 func (a *App) TwofaPage(c echo.Context) error {
-	var token, next string
+	var (
+		token    string
+		next     string
+		remember bool
+	)
 
 	if c.Request().Method == http.MethodPost {
 		token = strings.TrimSpace(c.FormValue("token"))
 		next = utils.SanitizeURI(c.FormValue("next"))
+		remember = c.FormValue("remember") == "true"
 	} else {
 		token = strings.TrimSpace(c.QueryParam("token"))
 		next = utils.SanitizeURI(c.QueryParam("next"))
+		remember = c.QueryParam("remember") == "true"
 	}
 
 	// If there's no token, redirect.
@@ -152,16 +159,16 @@ func (a *App) TwofaPage(c echo.Context) error {
 
 	userID, ok := data.(int)
 	if !ok {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("users.invalidRequest"))
+		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.invalidRequest"))
 	}
 
 	// Process the 2FA verification POST request.
 	if c.Request().Method == http.MethodPost {
-		return a.doTwofaVerify(c, token, userID, next)
+		return a.doTwofaVerify(c, token, userID, next, remember)
 	}
 
 	// Render the 2FA verification page.
-	return a.renderTwofaPage(c, token, next, "")
+	return a.renderTwofaPage(c, token, next, remember, "")
 }
 
 // Logout logs a user out.
@@ -263,7 +270,7 @@ func (a *App) OIDCFinish(c echo.Context) error {
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, oidcToken, c); err != nil {
+	if err := a.auth.SaveSession(user, oidcToken, c, true); err != nil {
 		return a.renderLoginPage(c, err)
 	}
 
@@ -452,6 +459,7 @@ func (a *App) doLogin(c echo.Context) error {
 		startTime = time.Now()
 		username  = strings.TrimSpace(c.FormValue("username"))
 		password  = strings.TrimSpace(c.FormValue("password"))
+		remember  = c.FormValue("remember") == "true"
 	)
 
 	// Ensure timing mitigation is applied regardless of early returns
@@ -488,11 +496,11 @@ func (a *App) doLogin(c echo.Context) error {
 
 		// Redirect to 2FA page.
 		next := utils.SanitizeURI(c.FormValue("next"))
-		return c.Redirect(http.StatusFound, fmt.Sprintf("%s/login/twofa?token=%s&next=%s", uriAdmin, token, url.QueryEscape(next)))
+		return c.Redirect(http.StatusFound, fmt.Sprintf("%s/login/twofa?token=%s&next=%s&remember=%v", uriAdmin, token, url.QueryEscape(next), remember))
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, "", c); err != nil {
+	if err := a.auth.SaveSession(user, "", c, remember); err != nil {
 		return err
 	}
 
@@ -559,7 +567,7 @@ func (a *App) doFirstTimeSetup(c echo.Context) error {
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, "", c); err != nil {
+	if err := a.auth.SaveSession(user, "", c, true); err != nil {
 		return err
 	}
 
@@ -688,7 +696,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	}
 
 	// Log the user in directly without forcing a manual login right after password change.
-	if err := a.auth.SaveSession(user, "", c); err != nil {
+	if err := a.auth.SaveSession(user, "", c, false); err != nil {
 		return err
 	}
 
@@ -697,48 +705,49 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 }
 
 // renderTwofaPage renders the 2FA verification page.
-func (a *App) renderTwofaPage(c echo.Context, token, next, errMsg string) error {
+func (a *App) renderTwofaPage(c echo.Context, token, next string, remember bool, errMsg string) error {
 	out := twofaTpl{
 		Title:       a.i18n.T("users.twoFA"),
 		Description: "",
 		Token:       token,
 		NextURI:     next,
+		Remember:    remember,
 		Error:       errMsg,
 	}
 	return c.Render(http.StatusOK, "admin-twofa", out)
 }
 
 // doTwofaVerify handles the 2FA verification form submission.
-func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next string) error {
+func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next string, remember bool) error {
 	totpCode := strings.TrimSpace(c.FormValue("totp_code"))
 
 	// Validate.
 	if !strHasLen(totpCode, 6, 6) {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
+		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("globals.messages.invalidValue"))
 	}
 
 	// Get the user.
 	user, err := a.core.GetUser(userID, "", "")
 	if err != nil {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("users.invalidRequest"))
+		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.invalidRequest"))
 	}
 
 	// Verify that TOTP is actually enabled for the user.
 	if user.TwofaType != models.TwofaTypeTOTP {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("users.twoFANotEnabled"))
+		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.twoFANotEnabled"))
 	}
 
 	// Verify the TOTP code.
 	valid := totp.Validate(totpCode, user.TwofaKey.String)
 	if !valid {
-		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
+		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("globals.messages.invalidValue"))
 	}
 
 	// Invalidate the token.
 	tmptokens.Delete(token)
 
 	// Set the session.
-	if err := a.auth.SaveSession(user, "", c); err != nil {
+	if err := a.auth.SaveSession(user, "", c, remember); err != nil {
 		return err
 	}
 

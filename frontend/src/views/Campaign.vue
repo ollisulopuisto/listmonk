@@ -51,7 +51,6 @@
             </b-field>
           </b-field>
         </div>
-        </div>
         <p class="has-text-right is-size-7 has-text-grey mt-1" v-if="saveStatus">
           <span v-if="saveStatus === 'saving'">Saving...</span>
           <span v-if="saveStatus === 'saved'">Saved</span>
@@ -187,7 +186,16 @@
       </b-tab-item><!-- campaign -->
 
       <b-tab-item :label="$t('campaigns.content')" icon="text" :disabled="isNew" value="content">
-        <editor v-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
+        <div v-if="isMobile" class="is-flex is-justify-content-center is-align-items-center p-6" style="height: 300px; flex-direction: column;">
+            <b-button size="is-large" type="is-primary" icon-left="pencil" @click="toggleEditorModal">
+                Open Editor
+            </b-button>
+            <p class="mt-4 has-text-grey">
+                Open the fullscreen editor for a better experience.
+            </p>
+        </div>
+
+        <editor v-else-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
           :templates="templates" :content-types="contentTypes" />
 
         <div class="columns">
@@ -322,6 +330,22 @@
     <campaign-preview v-if="isPreviewingArchive" @close="onToggleArchivePreview" type="campaign" :id="data.id"
       :archive-meta="form.archiveMetaStr" :title="data.title" :content-type="data.contentType"
       :template-id="form.archiveTemplateId" is-post is-archive />
+
+    <b-modal :active.sync="isEditorModalOpen" full-screen :can-cancel="false" v-if="isMobile">
+        <div class="modal-card" style="width: auto">
+            <header class="modal-card-head">
+                <p class="modal-card-title">Edit Content</p>
+                <button type="button" class="delete" aria-label="close" @click="toggleEditorModal" />
+            </header>
+            <section class="modal-card-body p-0">
+                 <editor v-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
+                  :templates="templates" :content-types="contentTypes" height="calc(100vh - 130px)" :is-mobile="isMobile" />
+            </section>
+             <footer class="modal-card-foot">
+                <b-button @click="toggleEditorModal">{{ $t('globals.buttons.close') }}</b-button>
+            </footer>
+        </div>
+    </b-modal>
   </section>
 </template>
 
@@ -349,7 +373,7 @@ export default Vue.extend({
   data() {
     return {
       saveStatus: '',
-          
+
       contentTypes: Object.freeze({
         richtext: this.$t('campaigns.richText'),
         html: this.$t('campaigns.rawHTML'),
@@ -401,6 +425,10 @@ export default Vue.extend({
         archiveMeta: {},
         testEmails: [],
       },
+
+      // UI state
+      isMobile: window.innerWidth <= 768,
+      isEditorModalOpen: false,
     };
   },
 
@@ -707,6 +735,14 @@ export default Vue.extend({
         this.data = d;
       });
     },
+
+    onResize() {
+      this.isMobile = window.innerWidth <= 768;
+    },
+
+    toggleEditorModal() {
+      this.isEditorModalOpen = !this.isEditorModalOpen;
+    },
   },
 
   computed: {
@@ -752,6 +788,11 @@ export default Vue.extend({
     otherMessengers() {
       return this.serverConfig.messengers.filter((m) => m !== 'email' && !m.startsWith('email-'));
     },
+  },
+
+  beforeDestroy() {
+    window.removeEventListener('resize', this.onResize);
+    this.$events.$off('campaign.update');
   },
 
   beforeRouteLeave(to, from, next) {
@@ -801,6 +842,7 @@ export default Vue.extend({
       });
     }, 2000);
 
+    window.addEventListener('resize', this.onResize);
     window.onbeforeunload = () => this.isUnsaved() || null;
 
     // Fill default form fields.
@@ -862,8 +904,5 @@ export default Vue.extend({
     });
   },
 
-  beforeDestroy() {
-    this.$events.$off('campaign.update');
-  },
 });
 </script>

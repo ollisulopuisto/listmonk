@@ -1,40 +1,36 @@
 <template>
   <!-- Two-way Data-Binding -->
   <section class="editor">
-    <div class="columns">
-      <div class="column is-three-quarters is-inline-flex">
+    <div class="columns" :class="{ 'is-mobile': !isMobile }">
+      <div class="column is-three-quarters" :class="{ 'is-inline-flex': !isMobile }">
         <b-field :label="$t('campaigns.format')" label-position="on-border" class="mr-4 mb-0">
-          <b-select v-model="contentTypeSel" :disabled="disabled" name="content_type">
+          <b-select v-model="contentTypeSel" :disabled="disabled" name="content_type" :expanded="isMobile">
             <option v-for="(name, f) in contentTypes" :key="f" name="format" :value="f" :data-cy="`check-${f}`">
               {{ name }}
             </option>
           </b-select>
         </b-field>
 
-        <b-field v-if="self.contentType !== 'visual'" :label="$tc('globals.terms.template')" label-position="on-border">
-          <b-select :placeholder="$t('globals.terms.none')" v-model="templateId" name="template" :disabled="disabled">
-            <template v-for="t in validTemplates">
-              <option :value="t.id" :key="t.id">
-                {{ t.name }}
-              </option>
-            </template>
+        <b-field v-if="self.contentType !== 'visual'" :label="$tc('globals.terms.template')" label-position="on-border" :class="{ 'mt-2': isMobile }">
+          <b-select :placeholder="$t('globals.terms.none')" v-model="templateId" name="template" :disabled="disabled" :expanded="isMobile">
+            <option v-for="t in validTemplates" :value="t.id" :key="t.id">
+              {{ t.name }}
+            </option>
           </b-select>
         </b-field>
 
-        <div v-else>
+        <div v-else :class="{ 'mt-2': isMobile }">
           <b-button v-if="!isVisualTplSelector" @click="onShowVisualTplSelector" type="is-ghost"
-            icon-left="file-find-outline" data-cy="btn-select-visual-tpl">
+            icon-left="file-find-outline" data-cy="btn-select-visual-tpl" :expanded="isMobile">
             {{ $t('campaigns.importVisualTemplate') }}
           </b-button>
           <b-field v-else :label="$tc('globals.terms.template')" label-position="on-border">
             <b-select :placeholder="$t('globals.terms.none')" v-model="visualTemplateId"
               @input="() => isVisualTplDisabled = false" name="template" :disabled="disabled"
-              class="copy-visual-template-list">
-              <template v-for="t in validTemplates">
-                <option :value="t.id" :key="t.id">
-                  {{ t.name }}
-                </option>
-              </template>
+              class="copy-visual-template-list" :expanded="isMobile">
+            <option v-for="t in validTemplates" :value="t.id" :key="t.id">
+                {{ t.name }}
+            </option>
             </b-select>
 
             <b-button :disabled="disabled || isVisualTplDisabled || !visualTemplateId" class="ml-3"
@@ -49,20 +45,20 @@
           </b-field>
         </div>
       </div>
-      <div class="column is- has-text-right">
+      <div class="column" :class="{ 'has-text-right': !isMobile, 'has-text-left mt-2': isMobile }">
         <b-button @click="onTogglePreview" type="is-primary" icon-left="file-find-outline" data-cy="btn-preview"
-          aria-keyshortcuts="F9">
+          aria-keyshortcuts="F9" :expanded="isMobile">
           <span class="has-kbd">{{ $t('campaigns.preview') }} <span class="kbd">F9</span></span>
         </b-button>
       </div>
     </div>
 
     <!-- wsywig //-->
-    <richtext-editor v-if="self.contentType === 'richtext'" :disabled="disabled" v-model="self.body" />
+    <richtext-editor v-if="self.contentType === 'richtext'" :disabled="disabled" v-model="self.body" :height="height || '75vh'" />
 
     <!-- visual editor //-->
     <visual-editor v-if="self.contentType === 'visual'" :source="self.bodySource" @change="onVisualEditorChange"
-      height="65vh" ref="visualEditor" />
+      :height="height || '65vh'" ref="visualEditor" />
 
     <!-- raw html editor //-->
     <code-editor lang="html" v-if="self.contentType === 'html'" v-model="self.body" key="editor-html" />
@@ -105,6 +101,8 @@ export default {
     contentTypes: { type: Object, default: () => ({}) },
     id: { type: Number, default: 0 },
     title: { type: String, default: '' },
+    height: { type: String, default: null },
+    isMobile: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
     templates: { type: Array, default: null },
 

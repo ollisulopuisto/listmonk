@@ -671,6 +671,7 @@
     "users.forgotPassword": "Forgot password?",
     "users.resetLinkSent": "If the account is active, you will receive a password reset email.",
     "users.resetPassword": "Reset password",
+    "users.rememberMe": "Remember me",
     "users.newPassword": "New password",
     "users.invalidResetLink": "Invalid or expired reset link",
     "email.forgotPassword.subject": "Reset your password",

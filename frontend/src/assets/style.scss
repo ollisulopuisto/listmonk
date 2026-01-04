@@ -474,6 +474,9 @@ body.is-noscroll {
     }
   }
 }
+.modal-z-index-high {
+  z-index: 2000 !important;
+}
 .modal-background {
   background: rgba(241, 241, 241, 0.7);
 }

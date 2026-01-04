@@ -367,11 +367,17 @@ func (o *Auth) Perm(next echo.HandlerFunc, perms ...string) echo.HandlerFunc {
 }
 
 // SaveSession creates and sets a session (post successful login/auth).
-func (o *Auth) SaveSession(u User, oidcToken string, c echo.Context) error {
+func (o *Auth) SaveSession(u User, oidcToken string, c echo.Context, remember bool) error {
 	sess, err := o.sess.NewSession(c, c)
 	if err != nil {
 		o.log.Printf("error creating login session: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "error creating session")
+	}
+
+	if remember {
+		sess.Options.MaxAge = int((time.Hour * 24 * 30).Seconds())
+	} else {
+		sess.Options.MaxAge = 0
 	}
 
 	if err := sess.SetMulti(map[string]any{"user_id": u.ID, "oidc_token": oidcToken}); err != nil {

@@ -41,7 +41,7 @@
     </b-modal>
 
     <!-- image picker -->
-    <b-modal :aria-modal="true" :active.sync="isMediaVisible" :width="900">
+    <b-modal :aria-modal="true" :active.sync="isMediaVisible" :width="900" class="modal-z-index-high">
       <div class="modal-card content" style="width: auto">
         <section expanded class="modal-card-body">
           <media is-modal @selected="onMediaSelect" />
@@ -110,6 +110,7 @@ export default {
 
   props: {
     disabled: { type: Boolean, default: false },
+    height: { type: String, default: '75vh' },
     value: {
       type: String,
       default: '',
@@ -172,8 +173,7 @@ export default {
         },
 
         browser_spellcheck: true,
-        browser_spellcheck: true,
-        height: '75vh',
+        height: this.height,
         toolbar_sticky: true,
         entity_encoding: 'raw',
         convert_urls: true,
@@ -221,6 +221,10 @@ export default {
           menubar: false,
           toolbar_mode: 'scrolling',
           toolbar: 'undo redo | image | bold italic link | bullist numlist | removeformat',
+          file_picker_callback: (callback) => {
+            this.isMediaVisible = true;
+            this.imageCallack = callback;
+          },
           min_height: 400,
           content_style: `
             body { font-family: 'Inter', sans-serif; font-size: 15px; margin: 10px; }
