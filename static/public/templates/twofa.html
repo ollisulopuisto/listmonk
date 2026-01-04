@@ -9,9 +9,10 @@
 		<div>
 			<input type="hidden" name="token" value="{{ .Data.Token }}" />
 			<input type="hidden" name="next" value="{{ .Data.NextURI }}" />
+			<input type="hidden" name="remember" value="{{ .Data.Remember }}" />
 			<p>
-				<input id="totp_code" type="text" name="totp_code" autofocus required 
-				pattern="[0-9]{6}" maxlength="6" placeholder="• • • • • •" aria-label="{{ .L.T "users.totpCode" }}" />
+				<input id="totp_code" type="text" name="totp_code" autofocus required pattern="[0-9]{6}" maxlength="6"
+					placeholder="• • • • • •" aria-label="{{ .L.T " users.totpCode" }}" />
 			</p>
 
 			{{ if .Data.Error }}<p><span class="error">{{ .Data.Error }}</span></p>{{ end }}

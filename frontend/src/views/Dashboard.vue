@@ -1,7 +1,6 @@
 <template>
   <section class="dashboard content">
-
-    <header class="columns">
+<header class="columns">
       <div class="column is-two-thirds">
         <h1 class="title is-5">
           {{ $utils.niceDate(new Date()) }}

@@ -109,7 +109,7 @@
                 {{ $t(`campaigns.status.${props.row.status}`) }}
               </b-tag>
             </router-link>
-            
+
             <span class="is-size-7 ml-2 has-text-grey" v-if="props.row.lists.length">
               {{ props.row.lists.length }} {{ props.row.lists.length === 1 ? 'list' : 'lists' }}
             </span>
@@ -175,17 +175,17 @@
              <div class="columns is-mobile is-multiline is-gapless mb-0">
                <div class="column is-6">
                  <span class="has-text-grey">{{ $t('globals.fields.createdAt') }}:</span>
-                 <br/>
+                 <br />
                  {{ $utils.niceDate(props.row.createdAt, true) }}
                </div>
                <div class="column is-6" v-if="stats.startedAt">
                  <span class="has-text-grey">{{ $t('campaigns.startedAt') }}:</span>
-                 <br/>
+                 <br />
                  {{ $utils.niceDate(stats.startedAt, true) }}
                </div>
                <div class="column is-6 mt-1" v-if="isDone(props.row)">
                   <span class="has-text-grey">{{ $t('campaigns.ended') }}:</span>
-                  <br/>
+                  <br />
                   {{ $utils.niceDate(stats.updatedAt, true) }}
                </div>
              </div>
