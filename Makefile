@@ -17,7 +17,7 @@ FRONTEND_DEPS = \
 	$(FRONTEND_EMAIL_BUILDER_DIST_FINAL) \
 	frontend/index.html \
 	frontend/package.json \
-	frontend/vite.config.js \
+	frontend/vite.config.mjs \
 	frontend/.eslintrc.js \
 	$(shell find frontend/fontello frontend/public frontend/src -type f)
 
