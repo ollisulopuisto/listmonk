@@ -2,20 +2,18 @@
   <form @submit.prevent="onSubmit">
     <section class="settings">
       <b-loading :is-full-page="true" v-if="loading.settings || isLoading" active />
-      <header class="columns page-header">
-        <div class="column is-half">
+      <header class="columns page-header is-mobile-responsive">
+        <div class="column is-8-desktop is-12-tablet">
           <h1 class="title is-4">
             {{ $t('settings.title') }}
             <span class="has-text-grey-light">({{ serverConfig.version }})</span>
           </h1>
         </div>
-        <div class="column has-text-right">
-          <b-field v-if="$can('settings:manage')" expanded>
-            <b-button expanded :disabled="!hasFormChanged" type="is-primary" icon-left="content-save-outline"
-              native-type="submit" class="isSaveEnabled" data-cy="btn-save">
-              {{ $t('globals.buttons.save') }}
-            </b-button>
-          </b-field>
+        <div class="column is-4-desktop is-12-tablet has-text-right-desktop">
+          <b-button :disabled="!hasFormChanged" type="is-primary" icon-left="content-save-outline"
+            native-type="submit" class="is-fullwidth-mobile" data-cy="btn-save">
+            {{ $t('globals.buttons.save') }}
+          </b-button>
         </div>
       </header>
       <hr />

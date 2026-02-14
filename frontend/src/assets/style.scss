@@ -282,6 +282,12 @@ section {
     }
 }
 
+.has-text-right-desktop {
+    @include desktop {
+        text-align: right !important;
+    }
+}
+
 .has-background-light-dark {
     background-color: var(--bg-card-hover);
 }
