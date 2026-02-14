@@ -2,13 +2,16 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app
 
-# Copy all frontend files first
+# Install yarn
+RUN apk add --no-cache yarn
+
+# Copy all frontend files
 COPY frontend ./frontend
 COPY static ./static
 
 # Build App Frontend
 WORKDIR /app/frontend
-RUN yarn install && npx vite build
+RUN yarn install && yarn build
 
 # Build Email Builder
 WORKDIR /app/frontend/email-builder
@@ -41,6 +44,7 @@ COPY --from=frontend-builder /app/frontend/public/static/email-builder ./fronten
 RUN CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w" cmd/*.go
 
 # Pack static assets into the binary using stuffbin
+# Using the binary from the GOPATH
 RUN /go/bin/stuffbin -a stuff -in listmonk -out listmonk \
     config.toml.sample \
     schema.sql queries:/queries permissions.json \
