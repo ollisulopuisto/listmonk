@@ -341,7 +341,6 @@ import Vue from 'vue';
 import { mapState } from 'vuex';
 
 import CampaignPreview from '../components/CampaignPreview.vue';
-import CopyText from '../components/CopyText.vue';
 import Editor from '../components/Editor.vue';
 import ListSelector from '../components/ListSelector.vue';
 import Media from './Media.vue';
@@ -351,7 +350,6 @@ export default Vue.extend({
     ListSelector,
     Editor,
     Media,
-    CopyText,
     CampaignPreview,
   },
 
@@ -658,7 +656,7 @@ export default Vue.extend({
 
     debounce(func, wait) {
       let timeout;
-      return function (...args) {
+      return function debounced(...args) {
         const context = this;
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(context, args), wait);
@@ -793,8 +791,7 @@ export default Vue.extend({
       this.form.lists = this.selectedLists;
     },
 
-    // eslint-disable-next-line func-names
-    'data.sendAt': function () {
+    'data.sendAt': function onSendAtChange() {
       if (this.data.sendAt !== null) {
         this.form.sendLater = true;
         this.form.sendAtDate = dayjs(this.data.sendAt).toDate();

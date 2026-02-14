@@ -39,6 +39,12 @@
         </div>
       </div>
     </div>
+
+    <b-table :data="lists.results" :loading="loading.listsFull" @check-all="onTableCheck" @check="onTableCheck"
+      :checked-rows.sync="bulk.checked" hoverable default-sort="createdAt" paginated backend-pagination
+      pagination-position="both" @page-change="onPageChange" :current-page="queryParams.page" :per-page="lists.perPage"
+      :total="lists.total" checkable backend-sorting @sort="onSort">
+      <template #top-left>
         <div class="actions" v-if="bulk.checked.length > 0">
           <a class="a" href="#" @click.prevent="deleteLists" data-cy="btn-delete-lists">
             <b-icon icon="trash-can-outline" size="is-small" /> Delete
@@ -56,8 +62,7 @@
       </template>
 
       <b-table-column v-slot="props" field="name" :label="$t('globals.fields.name')" header-class="cy-name" sortable
-        width="25%" paginated backend-pagination pagination-position="both" :td-attrs="$utils.tdID"
-        @page-change="onPageChange">
+        width="25%" :td-attrs="$utils.tdID">
         <div>
           <a :href="`/lists/${props.row.id}`" @click.prevent="showEditForm(props.row)">
             {{ props.row.name }}
@@ -302,7 +307,7 @@ export default Vue.extend({
     },
 
     deleteLists() {
-      const name = this.$tc('globals.terms.list', this.numSelectedCampaigns);
+      const name = this.$tc('globals.terms.list', this.numSelectedLists);
 
       const fn = () => {
         const params = {};
