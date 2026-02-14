@@ -374,12 +374,6 @@ func (o *Auth) SaveSession(u User, oidcToken string, c echo.Context, remember bo
 		return echo.NewHTTPError(http.StatusInternalServerError, "error creating session")
 	}
 
-	if remember {
-		sess.Options.MaxAge = int((time.Hour * 24 * 30).Seconds())
-	} else {
-		sess.Options.MaxAge = 0
-	}
-
 	if err := sess.SetMulti(map[string]any{"user_id": u.ID, "oidc_token": oidcToken}); err != nil {
 		o.log.Printf("error setting login session: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "error creating session")
