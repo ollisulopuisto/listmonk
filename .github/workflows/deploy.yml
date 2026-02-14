@@ -29,8 +29,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/ollisulopuisto/listmonk:latest
+            ghcr.io/ollisulopuisto/listmonk:${{ github.sha }}
 
   deploy-staging:
     needs: build-and-push
