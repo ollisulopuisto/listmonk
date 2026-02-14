@@ -8,6 +8,7 @@ RUN apk add --no-cache yarn
 # Copy all frontend files
 COPY frontend ./frontend
 COPY static ./static
+COPY .gitignore .
 
 # Build App Frontend
 WORKDIR /app/frontend
@@ -33,7 +34,7 @@ RUN go install github.com/knadh/stuffbin/stuffbin@latest
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy source code and gitignore
 COPY . .
 
 # Copy built frontend assets from previous stage
@@ -44,7 +45,6 @@ COPY --from=frontend-builder /app/frontend/public/static/email-builder ./fronten
 RUN CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w" cmd/*.go
 
 # Pack static assets into the binary using stuffbin
-# Using the binary from the GOPATH
 RUN /go/bin/stuffbin -a stuff -in listmonk -out listmonk \
     config.toml.sample \
     schema.sql queries:/queries permissions.json \
