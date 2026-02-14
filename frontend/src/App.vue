@@ -13,6 +13,10 @@
         <navigation v-if="isMobile" :is-mobile="isMobile" :active-item="activeItem" :active-group="activeGroup"
           @toggleGroup="toggleGroup" @doLogout="doLogout" />
 
+        <b-navbar-item tag="div" class="is-hidden-mobile mr-2">
+          <b-button @click="toggleTheme" type="is-ghost" :icon-left="theme === 'dark' ? 'white-balance-sunny' : 'moon-waning-crescent'" />
+        </b-navbar-item>
+
         <b-navbar-dropdown class="user" tag="div" right>
           <template v-if="profile.username" #label>
             <span class="user-avatar">
@@ -99,6 +103,7 @@
     </div>
 
     <b-loading v-if="!$root.isLoaded" active />
+    <command-palette ref="commandPalette" />
   </div>
 </template>
 
@@ -108,12 +113,14 @@ import { mapState } from 'vuex';
 import { uris } from './constants';
 
 import Navigation from './components/Navigation.vue';
+import CommandPalette from './components/CommandPalette.vue';
 
 export default Vue.extend({
   name: 'App',
 
   components: {
     Navigation,
+    CommandPalette,
   },
 
   data() {
@@ -121,10 +128,15 @@ export default Vue.extend({
       activeItem: {},
       activeGroup: {},
       windowWidth: window.innerWidth,
+      theme: localStorage.getItem('theme') || 'light',
     };
   },
 
   watch: {
+    theme(val) {
+      document.documentElement.setAttribute('data-theme', val);
+      localStorage.setItem('theme', val);
+    },
     $route(to) {
       // Set the current route name to true for active+expanded keys in the
       // menu to pick up.
@@ -142,6 +154,10 @@ export default Vue.extend({
   methods: {
     toggleGroup(group, state) {
       this.activeGroup = state ? { [group]: true } : {};
+    },
+
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
     },
 
     reloadApp() {
@@ -205,6 +221,8 @@ export default Vue.extend({
   },
 
   mounted() {
+    document.documentElement.setAttribute('data-theme', this.theme);
+
     // Lists is required across different views. On app load, fetch the lists
     // and have them in the store.
     this.$api.getLists({ minimal: true, per_page: 'all', status: 'active' });
@@ -219,6 +237,6 @@ export default Vue.extend({
 </script>
 
 <style lang="scss">
-@use "assets/style.scss";
-@use "assets/icons/fontello.css";
+@import "@/assets/style.scss";
+@import "@/assets/icons/fontello.css";
 </style>

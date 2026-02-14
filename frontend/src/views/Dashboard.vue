@@ -29,13 +29,13 @@
     <section class="counts wrap">
       <div class="tile is-ancestor">
         <div class="tile is-vertical is-12">
-          <div class="tile">
-            <div class="tile is-parent is-vertical relative">
+          <div class="tile is-multiline">
+            <div class="tile is-parent is-6-desktop is-12-tablet relative">
               <b-loading v-if="isCountsLoading" active :is-full-page="false" />
               <article class="tile is-child notification" data-cy="lists">
-                <div class="columns is-mobile">
-                  <div class="column is-6">
-                    <p class="title">
+                <div class="columns is-mobile is-multiline">
+                  <div class="column is-6-mobile is-6-tablet">
+                    <p class="title is-size-4-mobile">
                       <b-icon icon="format-list-bulleted-square" />
                       {{ $utils.niceNumber(counts.lists.total) }}
                     </p>
@@ -43,8 +43,8 @@
                       {{ $tc('globals.terms.list', counts.lists.total) }}
                     </p>
                   </div>
-                  <div class="column is-6">
-                    <ul class="no has-text-grey">
+                  <div class="column is-6-mobile is-6-tablet">
+                    <ul class="no has-text-grey is-size-7-mobile">
                       <li>
                         <label for="#">{{ $utils.niceNumber(counts.lists.public) }}</label>
                         {{ $t('lists.types.public') }}
@@ -65,11 +65,14 @@
                   </div>
                 </div>
               </article><!-- lists -->
+            </div>
 
+            <div class="tile is-parent is-6-desktop is-12-tablet relative">
+              <b-loading v-if="isCountsLoading" active :is-full-page="false" />
               <article class="tile is-child notification" data-cy="campaigns">
-                <div class="columns is-mobile">
-                  <div class="column is-6">
-                    <p class="title">
+                <div class="columns is-mobile is-multiline">
+                  <div class="column is-6-mobile is-6-tablet">
+                    <p class="title is-size-4-mobile">
                       <b-icon icon="rocket-launch-outline" />
                       {{ $utils.niceNumber(counts.campaigns.total) }}
                     </p>
@@ -77,8 +80,8 @@
                       {{ $tc('globals.terms.campaign', counts.campaigns.total) }}
                     </p>
                   </div>
-                  <div class="column is-6">
-                    <ul class="no has-text-grey">
+                  <div class="column is-6-mobile is-6-tablet">
+                    <ul class="no has-text-grey is-size-7-mobile">
                       <li v-for="(num, status) in counts.campaigns.byStatus" :key="status">
                         <label for="#" :data-cy="`campaigns-${status}`">{{ num }}</label>
                         {{ $t(`campaigns.status.${status}`) }}
@@ -90,14 +93,14 @@
                   </div>
                 </div>
               </article><!-- campaigns -->
-            </div><!-- block -->
+            </div>
 
-            <div class="tile is-parent relative">
+            <div class="tile is-parent is-12 relative">
               <b-loading v-if="isCountsLoading" active :is-full-page="false" />
               <article class="tile is-child notification" data-cy="subscribers">
-                <div class="columns is-mobile">
-                  <div class="column is-6">
-                    <p class="title">
+                <div class="columns is-mobile is-multiline">
+                  <div class="column is-4-desktop is-6-mobile">
+                    <p class="title is-size-4-mobile">
                       <b-icon icon="account-multiple" />
                       {{ $utils.niceNumber(counts.subscribers.total) }}
                     </p>
@@ -106,8 +109,8 @@
                     </p>
                   </div>
 
-                  <div class="column is-6">
-                    <ul class="no has-text-grey">
+                  <div class="column is-4-desktop is-6-mobile">
+                    <ul class="no has-text-grey is-size-7-mobile">
                       <li>
                         <label for="#">{{ $utils.niceNumber(counts.subscribers.blocklisted) }}</label>
                         {{ $t('subscribers.status.blocklisted') }}
@@ -118,11 +121,10 @@
                       </li>
                     </ul>
                   </div><!-- subscriber breakdown -->
-                </div><!-- subscriber columns -->
-                <hr />
-                <div class="columns" data-cy="messages">
-                  <div class="column is-12">
-                    <p class="title">
+
+                  <div class="column is-4-desktop is-12-mobile">
+                    <hr class="is-hidden-desktop" />
+                    <p class="title is-size-4-mobile">
                       <b-icon icon="email-outline" />
                       {{ $utils.niceNumber(counts.messages) }}
                     </p>
@@ -137,15 +139,15 @@
           <div class="tile is-parent relative">
             <b-loading v-if="isChartsLoading" active :is-full-page="false" />
             <article class="tile is-child notification charts">
-              <div class="columns">
-                <div class="column is-6">
+              <div class="columns is-multiline">
+                <div class="column is-6-desktop is-12-tablet">
                   <h3 class="title is-size-6">
                     {{ $t('dashboard.campaignViews') }}
                   </h3><br />
                   <chart type="line" v-if="campaignViews" :data="campaignViews" />
                 </div>
-                <div class="column is-6">
-                  <h3 class="title is-size-6 has-text-right">
+                <div class="column is-6-desktop is-12-tablet">
+                  <h3 class="title is-size-6 has-text-right-desktop">
                     {{ $t('dashboard.linkClicks') }}
                   </h3><br />
                   <chart type="line" v-if="campaignClicks" :data="campaignClicks" />

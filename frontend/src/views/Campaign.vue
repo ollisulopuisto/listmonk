@@ -1,60 +1,47 @@
 <template>
   <section class="campaign">
-    <header class="columns page-header">
+    <header class="columns page-header is-mobile is-vcentered mb-4">
       <div class="column is-6">
-        <p v-if="isEditing && data.status" class="tags">
-          <b-tag v-if="isEditing" :class="data.status">
-            {{ $t(`campaigns.status.${data.status}`) }}
-          </b-tag>
-          <b-tag v-if="data.type === 'optin'" :class="data.type">
-            {{ $t('lists.optin') }}
-          </b-tag>
-          <span v-if="isEditing" class="has-text-grey-light is-size-7" :data-campaign-id="data.id">
-            {{ $t('globals.fields.id') }}: <copy-text :text="`${data.id}`" />
-            {{ $t('globals.fields.uuid') }}: <copy-text :text="data.uuid" />
-          </span>
-        </p>
-        <h4 v-if="isEditing" class="title is-4">
+        <h4 v-if="isEditing" class="title is-4 mb-0">
           {{ data.name }}
         </h4>
-        <h4 v-else class="title is-4">
+        <h4 v-else class="title is-4 mb-0">
           {{ $t('campaigns.newCampaign') }}
         </h4>
+        <p v-if="isEditing && data.status" class="tags mt-1 mb-0">
+          <b-tag v-if="isEditing" :class="data.status" size="is-small">
+            {{ $t(`campaigns.status.${data.status}`) }}
+          </b-tag>
+          <span v-if="isEditing" class="has-text-grey-light is-size-7 ml-1">
+            #{{ data.id }}
+          </span>
+        </p>
       </div>
 
-      <div class="column is-6">
-        <div v-if="canManage" class="buttons">
-          <b-field grouped v-if="isEditing && canEdit">
-            <b-field expanded>
-              <b-button expanded @click="() => onSubmit('update')" :loading="loading.campaigns" type="is-primary"
-                icon-left="content-save-outline" data-cy="btn-save" aria-keyshortcuts="ctrl+s">
-                <span class="has-kbd">{{ $t('globals.buttons.saveChanges') }} <span class="kbd">Ctrl+S</span></span>
+      <div class="column is-6 has-text-right">
+        <div v-if="canManage" class="buttons is-right">
+          <b-button v-if="isEditing && canEdit" @click="() => onSubmit('update')" :loading="loading.campaigns"
+            type="is-primary" icon-left="content-save-outline" data-cy="btn-save" />
+
+          <b-dropdown v-if="isEditing && (canStart || canSchedule || canUnSchedule)" position="is-bottom-left"
+            append-to-body>
+            <template #trigger>
+              <b-button type="is-primary" icon-right="chevron-down">
+                {{ $t('globals.buttons.actions') }}
               </b-button>
-            </b-field>
-            <b-field expanded v-if="canStart">
-              <b-button expanded @click="startCampaign" :loading="loading.campaigns" type="is-primary"
-                icon-left="rocket-launch-outline" data-cy="btn-start">
-                {{ $t('campaigns.start') }}
-              </b-button>
-            </b-field>
-            <b-field expanded v-if="canSchedule">
-              <b-button expanded @click="startCampaign" :loading="loading.campaigns" type="is-primary"
-                icon-left="clock-start" data-cy="btn-schedule">
-                {{ $t('campaigns.schedule') }}
-              </b-button>
-            </b-field>
-            <b-field expanded v-if="canUnSchedule">
-              <b-button expanded @click="$utils.confirm(null, unscheduleCampaign)" :loading="loading.campaigns"
-                type="is-primary" icon-left="clock-start" data-cy="btn-unschedule">
-                {{ $t('campaigns.unSchedule') }}
-              </b-button>
-            </b-field>
-          </b-field>
+            </template>
+
+            <b-dropdown-item v-if="canStart" @click="startCampaign">
+              <b-icon icon="rocket-launch-outline" /> {{ $t('campaigns.start') }}
+            </b-dropdown-item>
+            <b-dropdown-item v-if="canSchedule" @click="startCampaign">
+              <b-icon icon="clock-start" /> {{ $t('campaigns.schedule') }}
+            </b-dropdown-item>
+            <b-dropdown-item v-if="canUnSchedule" @click="$utils.confirm(null, unscheduleCampaign)">
+              <b-icon icon="clock-start" /> {{ $t('campaigns.unSchedule') }}
+            </b-dropdown-item>
+          </b-dropdown>
         </div>
-        <p class="has-text-right is-size-7 has-text-grey mt-1" v-if="saveStatus">
-          <span v-if="saveStatus === 'saving'">Saving...</span>
-          <span v-if="saveStatus === 'saved'">Saved</span>
-        </p>
       </div>
     </header>
 
@@ -64,8 +51,8 @@
       <b-tab-item :label="$tc('globals.terms.campaign')" label-position="on-border" value="campaign"
         icon="rocket-launch-outline">
         <section class="wrap">
-          <div class="columns">
-            <div class="column is-7">
+          <div class="columns is-multiline">
+            <div class="column is-7-desktop is-12-tablet">
               <form @submit.prevent="() => onSubmit(isNew ? 'create' : 'update')">
                 <b-field :label="$t('globals.fields.name')" label-position="on-border">
                   <b-input :maxlength="200" :ref="'focus'" v-model="form.name" name="name" :disabled="!canEdit"
@@ -85,8 +72,8 @@
                 <list-selector v-model="form.lists" :selected="form.lists" :all="lists.results" :disabled="!canEdit"
                   :label="$t('globals.terms.lists')" :placeholder="$t('campaigns.sendToLists')" />
 
-                <div class="columns">
-                  <div class="column is-6">
+                <div class="columns is-multiline">
+                  <div class="column is-6-desktop is-12-tablet">
                     <b-field :label="$tc('globals.terms.messenger')" label-position="on-border">
                       <b-select :placeholder="$tc('globals.terms.messenger')" v-model="form.messenger" name="messenger"
                         :disabled="!canEdit" required expanded>
@@ -104,8 +91,8 @@
                       </b-select>
                     </b-field>
                   </div>
-                  <div class="column is-6">
-                    <b-field :label="$t('campaigns.format')" label-position="on-border" class="mr-4 mb-0">
+                  <div class="column is-6-desktop is-12-tablet">
+                    <b-field :label="$t('campaigns.format')" label-position="on-border" class="mb-0">
                       <b-select v-model="form.content.contentType" :disabled="!canEdit || isEditing" value="richtext"
                         expanded>
                         <option v-for="(name, f) in contentTypes" :key="f" name="format" :value="f"
@@ -123,25 +110,24 @@
                 </b-field>
                 <hr />
 
-                <div class="columns">
-                  <div class="column is-4">
+                <div class="columns is-multiline">
+                  <div class="column is-4-desktop is-12-tablet">
                     <b-field :label="$t('campaigns.sendLater')" data-cy="btn-send-later">
                       <b-switch v-model="form.sendLater" :disabled="!canEdit" />
                     </b-field>
                   </div>
-                  <div class="column">
-                    <br />
+                  <div class="column is-8-desktop is-12-tablet">
                     <b-field v-if="form.sendLater" data-cy="send_at"
                       :message="form.sendAtDate ? $utils.duration(Date(), form.sendAtDate) : ''">
                       <b-datetimepicker v-model="form.sendAtDate" :disabled="!canEdit" required editable mobile-native
                         position="is-top-right" :placeholder="$t('campaigns.dateAndTime')" icon="calendar-clock"
                         :timepicker="{ hourFormat: '24' }" :datetime-formatter="formatDateTime"
-                        horizontal-time-picker />
+                        horizontal-time-picker expanded />
                     </b-field>
                   </div>
                 </div>
 
-                <div>
+                <div class="mt-4">
                   <p class="has-text-right">
                     <a href="#" @click.prevent="onShowHeaders" data-cy="btn-headers">
                       <b-icon icon="plus" />{{ $t('settings.smtp.setCustomHeaders') }}
@@ -163,8 +149,7 @@
                 </b-field>
               </form>
             </div>
-            <div v-if="canManage" class="column is-4 is-offset-1">
-              <br />
+            <div v-if="canManage" class="column is-4-desktop is-offset-1-desktop is-12-tablet">
               <div class="box">
                 <h3 class="title is-size-6">
                   {{ $t('campaigns.sendTest') }}
@@ -175,7 +160,7 @@
                 </b-field>
                 <b-field>
                   <b-button @click="() => onSubmit('test')" :loading="loading.campaigns" :disabled="isNew"
-                    type="is-primary" icon-left="email-outline">
+                    type="is-primary" icon-left="email-outline" expanded>
                     {{ $t('campaigns.send') }}
                   </b-button>
                 </b-field>
@@ -198,8 +183,8 @@
         <editor v-else-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
           :templates="templates" :content-types="contentTypes" />
 
-        <div class="columns">
-          <div class="column is-6">
+        <div class="columns is-multiline mt-4">
+          <div class="column is-6-desktop is-12-tablet">
             <p v-if="!isAttachFieldVisible" class="is-size-6 has-text-grey">
               <a href="#" @click.prevent="onShowAttachField()" data-cy="btn-attach">
                 <b-icon icon="file-upload-outline" size="is-small" />
@@ -213,11 +198,11 @@
                 @focus="onOpenAttach" :disabled="!canEdit" />
             </b-field>
           </div>
-          <div class="column has-text-right">
+          <div class="column is-6-desktop is-12-tablet has-text-right-desktop has-text-left-tablet">
             <a href="https://listmonk.app/docs/templating/#template-expressions" target="_blank"
               rel="noopener noreferer">
               <b-icon icon="code" /> {{ $t('campaigns.templatingRef') }}</a>
-            <span v-if="canEdit && form.content.contentType !== 'plain'" class="is-size-6 has-text-grey ml-6">
+            <div v-if="canEdit && form.content.contentType !== 'plain'" class="is-size-6 has-text-grey mt-2">
               <a v-if="form.altbody === null" href="#" @click.prevent="onAddAltBody">
                 <b-icon icon="text" size="is-small" /> {{ $t('campaigns.addAltText') }}
               </a>
@@ -225,7 +210,7 @@
                 <b-icon icon="trash-can-outline" size="is-small" />
                 {{ $t('campaigns.removeAltText') }}
               </a>
-            </span>
+            </div>
           </div>
         </div>
 

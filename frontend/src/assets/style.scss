@@ -1,13 +1,57 @@
 /* Import Bulma to set variables */
 @import "../node_modules/bulma/sass/utilities/_all";
 
+// 2026 Modern Color Palette (CSS Variables)
+:root {
+  --bg-main: #f5f7fa;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #ffffff;
+  
+  --text-main: #2d3748;
+  --text-muted: #718096;
+  --text-on-primary: #ffffff;
+
+  --primary: #0055d4;
+  --primary-hover: #0044aa;
+  --success: #36995b;
+  --danger: #FF5722;
+  --warning: #ed7b00;
+
+  --border-color: #e2e8f0;
+  --input-bg: #ffffff;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --radius: 10px;
+}
+
+[data-theme='dark'] {
+  --bg-main: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-sidebar: #1e293b;
+
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --border-color: #334155;
+  --input-bg: #0f172a;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+
+$body-family: "Inter", "Helvetica Neue", sans-serif;
+$body-size: 15px;
+$background: var(--bg-main);
+$body-background-color: var(--bg-main);
+
 /* import inter-regular */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 400;
   src: local(''),
-       url('assets/fonts/Inter-Regular.woff2') format('woff2'),
+       url('fonts/Inter-Regular.woff2') format('woff2'),
 }
 
 /* import inter-600 */
@@ -16,21 +60,17 @@
   font-style: normal;
   font-weight: 600;
   src: local(''),
-       url('assets/fonts/Inter-Bold.woff2') format('woff2'),
+       url('fonts/Inter-Bold.woff2') format('woff2'),
 }
 
-$body-family: "Inter", "Helvetica Neue", sans-serif;
-$body-size: 15px;
-$background: $white-bis;
-$body-background-color: $white-bis;
-$primary: #0055d4;
+$primary: #0055d4; // Keep for Sass compatibility
 $green: #36995b;
 $turquoise: $green;
 $red: #FF5722;
 
-$link: $primary;
+$link: var(--primary);
 $input-placeholder-color: $grey-light;
-$grey-lightest: #eaeaea;
+$grey-lightest: var(--border-color);
 
 $colors: map-merge($colors, (
     "turquoise": ($green, $green-invert),
@@ -39,26 +79,46 @@ $colors: map-merge($colors, (
     "danger": ($red, $green-invert),
 ));
 
-$sidebar-box-shadow: none;
+$sidebar-box-shadow: var(--shadow-sm);
 $sidebar-width: 240px;
-$menu-item-active-background-color: $white-bis;
-$menu-item-active-color: $primary;
-
-
-/* Buefy */
-$modal-background-background-color: rgba(0, 0, 0, .30);
-
-.line-chart {
-  min-height: 300px;
-}
-
-/* Import full Bulma and Buefy */
-@import "bulma";
-@import "buefy/src/scss/buefy";
+$menu-item-active-background-color: var(--bg-main);
+$menu-item-active-color: var(--primary);
 
 /* Custom style overrides */
 html, body {
   height: 100%;
+  color: var(--text-main);
+}
+
+.box {
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.input, .taginput .taginput-container.is-focusable, .textarea, .select select {
+  background-color: var(--input-bg);
+  color: var(--text-main);
+  border-color: var(--border-color);
+  border-radius: 6px;
+  box-shadow: none;
+
+  &:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 0.125em rgba(0, 85, 212, 0.25);
+  }
+}
+
+.navbar {
+  background-color: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar {
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
 }
 
 code {
@@ -205,12 +265,20 @@ section {
     flex-direction: row;
     min-height: 100vh;
     margin-top: 0px;
+
+    @media screen and (max-width: 1100px) {
+      flex-direction: column;
+    }
   }
 
   .sidebar {
-    flex-shrink: 1;
+    flex-shrink: 0;
     box-shadow: 0 0 3px $grey-lighter;
     background: $white;
+
+    @media screen and (max-width: 1100px) {
+      display: none; // Hidden on mobile, handled by Navbar
+    }
   }
 
   .main {
@@ -219,11 +287,44 @@ section {
     padding: 30px;
     flex-grow: 1;
     position: relative;
+
+    @media screen and (max-width: 1100px) {
+      margin-left: 0;
+      padding: 15px;
+    }
   }
 }
 
 .navbar {
   box-shadow: 0 0 3px $grey-lighter;
+
+  @media screen and (max-width: 1100px) {
+    .navbar-brand {
+      padding-left: 10px;
+    }
+  }
+}
+
+// Mobile optimization for forms and buttons
+@media screen and (max-width: 768px) {
+  .button {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    justify-content: center;
+  }
+
+  .field.is-grouped {
+    flex-direction: column;
+    .control {
+      width: 100%;
+    }
+  }
+
+  .tabs ul {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 .navbar-brand {
   padding: 0 0 0 25px;
