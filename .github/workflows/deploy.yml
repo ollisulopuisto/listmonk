@@ -6,7 +6,22 @@ on:
     tags: [ 'v*' ]
 
 jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run Go tests
+        run: go test ./...
+
   build-and-push:
+    needs: run-tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
