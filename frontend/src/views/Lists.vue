@@ -1,11 +1,11 @@
 <template>
   <section class="lists">
-    <header class="columns page-header">
-      <div class="column is-10">
+    <header class="columns page-header is-mobile-responsive">
+      <div class="column is-8-desktop is-12-tablet">
         <h1 class="title is-4 mb-2">
           {{ $t('globals.terms.lists') }}
           <span v-if="queryParams.status === 'archived'" class="has-text-grey-light">/ {{ queryParams.status }} </span>
-          <span v-if="!isNaN(lists.total)">({{ lists.total }})</span>
+          <span v-if="!isNaN(lists.total)" class="has-text-grey-light">({{ lists.total }})</span>
         </h1>
 
         <div class="is-size-7">
@@ -17,32 +17,28 @@
           </router-link>
         </div>
       </div>
-      <div class="column has-text-right">
-        <b-field v-if="$can('lists:manage_all')" expanded>
-          <b-button expanded type="is-primary" icon-left="plus" class="btn-new" @click="showNewForm" data-cy="btn-new">
-            {{ $t('globals.buttons.new') }}
-          </b-button>
-        </b-field>
+      <div class="column is-4-desktop is-12-tablet has-text-right-desktop">
+        <b-button v-if="$can('lists:manage_all')" type="is-primary" icon-left="plus" class="is-fullwidth-mobile"
+          @click="showNewForm" data-cy="btn-new">
+          {{ $t('globals.buttons.new') }}
+        </b-button>
       </div>
     </header>
 
-    <b-table :data="lists.results" :loading="loading.listsFull" @check-all="onTableCheck" @check="onTableCheck"
-      :checked-rows.sync="bulk.checked" hoverable default-sort="createdAt" paginated backend-pagination
-      pagination-position="both" @page-change="onPageChange" :current-page="queryParams.page" :per-page="lists.perPage"
-      :total="lists.total" checkable backend-sorting @sort="onSort">
-      <template #top-left>
-        <div class="columns">
-          <div class="column is-6">
-            <form @submit.prevent="getLists">
-              <b-field>
-                <b-input v-model="queryParams.query" name="query" expanded icon="magnify" ref="query" data-cy="query" />
-                <p class="controls">
-                  <b-button native-type="submit" type="is-primary" icon-left="magnify" data-cy="btn-query" />
-                </p>
-              </b-field>
-            </form>
-          </div>
+    <div class="lists-controls section-box mb-4">
+      <div class="columns is-multiline">
+        <div class="column is-12-mobile is-6-tablet">
+          <form @submit.prevent="getLists">
+            <b-field addons class="search-field">
+              <b-input v-model="queryParams.query" name="query" expanded icon="magnify" ref="query" data-cy="query" />
+              <p class="control">
+                <b-button native-type="submit" type="is-primary" icon-left="magnify" data-cy="btn-query" />
+              </p>
+            </b-field>
+          </form>
         </div>
+      </div>
+    </div>
         <div class="actions" v-if="bulk.checked.length > 0">
           <a class="a" href="#" @click.prevent="deleteLists" data-cy="btn-delete-lists">
             <b-icon icon="trash-can-outline" size="is-small" /> Delete

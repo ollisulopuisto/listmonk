@@ -1,73 +1,70 @@
 <template>
   <section class="subscribers">
-    <header class="columns page-header">
-      <div class="column is-10">
+    <header class="columns page-header is-mobile-responsive">
+      <div class="column is-8-desktop is-12-tablet">
         <h1 class="title is-4">
           {{ $t('globals.terms.subscribers') }}
-          <span v-if="!isNaN(subscribers.total)">
-            (<span data-cy="count">{{ subscribers.total }}</span>)
+          <span v-if="!isNaN(subscribers.total)" class="has-text-grey-light">
+            ({{ subscribers.total }})
           </span>
-          <span v-if="currentList">
+          <span v-if="currentList" class="current-filter">
             &raquo; {{ currentList.name }}
             <span v-if="queryParams.subStatus" class="has-text-grey has-text-weight-normal is-capitalized">({{
               queryParams.subStatus }})</span>
           </span>
         </h1>
       </div>
-      <div class="column has-text-right">
-        <b-field v-if="$can('subscribers:manage')" expanded>
-          <b-button expanded type="is-primary" icon-left="plus" @click="showNewForm" data-cy="btn-new" class="btn-new">
-            {{ $t('globals.buttons.new') }}
-          </b-button>
-        </b-field>
+      <div class="column is-4-desktop is-12-tablet has-text-right-desktop">
+        <b-button v-if="$can('subscribers:manage')" type="is-primary" icon-left="plus" @click="showNewForm"
+          data-cy="btn-new" class="is-fullwidth-mobile">
+          {{ $t('globals.buttons.new') }}
+        </b-button>
       </div>
     </header>
 
-    <section class="subscribers-controls">
-      <div class="columns">
-        <div class="column is-8">
+    <section class="subscribers-controls section-box">
+      <div class="columns is-multiline">
+        <div class="column is-12-mobile is-8-tablet">
           <form @submit.prevent="onSubmit">
-            <div>
-              <b-field addons>
-                <b-input @input="onSimpleQueryInput" v-model="queryInput" expanded
-                  :placeholder="$t('subscribers.queryPlaceholder')" icon="magnify" ref="query"
-                  :disabled="isSearchAdvanced" data-cy="search" />
-                <p class="controls">
-                  <b-button native-type="submit" type="is-primary" icon-left="magnify" :disabled="isSearchAdvanced"
-                    data-cy="btn-search" />
-                </p>
-              </b-field>
-
-              <div v-if="isSearchAdvanced">
-                <b-input v-model="queryParams.queryExp" @keydown.native.enter="onAdvancedQueryEnter" type="textarea"
-                  ref="queryExp" placeholder="subscribers.name LIKE '%user%' or subscribers.status='blocklisted'"
-                  data-cy="query" />
-                <span class="is-size-6 has-text-grey">
-                  {{ $t('subscribers.advancedQueryHelp') }}.{{ ' ' }}
-                  <a href="https://listmonk.app/docs/querying-and-segmentation" target="_blank"
-                    rel="noopener noreferrer">
-                    {{ $t('globals.buttons.learnMore') }}.
-                  </a>
-                </span>
-                <div class="buttons">
-                  <b-button native-type="submit" type="is-primary" icon-left="magnify" data-cy="btn-query">
-                    {{
-                      $t('subscribers.query') }}
-                  </b-button>
-                  <b-button @click.prevent="toggleAdvancedSearch" icon-left="cancel" data-cy="btn-query-reset">
-                    {{ $t('subscribers.reset') }}
-                  </b-button>
-                </div>
-              </div><!-- advanced query -->
-            </div>
+            <b-field addons class="search-field">
+              <b-input @input="onSimpleQueryInput" v-model="queryInput" expanded
+                :placeholder="$t('subscribers.queryPlaceholder')" icon="magnify" ref="query"
+                :disabled="isSearchAdvanced" data-cy="search" />
+              <p class="control">
+                <b-button native-type="submit" type="is-primary" icon-left="magnify" :disabled="isSearchAdvanced"
+                  data-cy="btn-search" />
+              </p>
+            </b-field>
           </form>
-          <div v-if="!isSearchAdvanced" class="toggle-advanced">
-            <a href="#" @click.prevent="toggleAdvancedSearch" data-cy="btn-advanced-search">
+          <div v-if="!isSearchAdvanced" class="toggle-advanced mt-2">
+            <a href="#" @click.prevent="toggleAdvancedSearch" data-cy="btn-advanced-search" class="is-size-7">
               <b-icon icon="cog-outline" size="is-small" />
               {{ $t('subscribers.advancedQuery') }}
             </a>
           </div>
-        </div><!-- search -->
+        </div>
+      </div>
+
+      <div v-if="isSearchAdvanced" class="advanced-search-box mt-4 p-4 border-radius has-background-light-dark">
+        <b-field :label="$t('subscribers.advancedQuery')">
+          <b-input v-model="queryParams.queryExp" @keydown.native.enter="onAdvancedQueryEnter" type="textarea"
+            ref="queryExp" placeholder="subscribers.name LIKE '%user%' or subscribers.status='blocklisted'"
+            data-cy="query" />
+        </b-field>
+        <p class="is-size-7 has-text-grey mb-3">
+          {{ $t('subscribers.advancedQueryHelp') }}.{{ ' ' }}
+          <a href="https://listmonk.app/docs/querying-and-segmentation" target="_blank" rel="noopener noreferrer">
+            {{ $t('globals.buttons.learnMore') }}.
+          </a>
+        </p>
+        <div class="buttons">
+          <b-button @click.prevent="onSubmit" type="is-primary" icon-left="magnify" data-cy="btn-query">
+            {{ $t('subscribers.query') }}
+          </b-button>
+          <b-button @click.prevent="toggleAdvancedSearch" icon-left="close" data-cy="btn-query-reset">
+            {{ $t('globals.buttons.cancel') }}
+          </b-button>
+        </div>
       </div>
     </section><!-- control -->
 

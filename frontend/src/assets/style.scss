@@ -257,6 +257,52 @@ section {
   display: inline-block;
 }
 
+.page-header.is-mobile-responsive {
+    @include mobile {
+        display: flex !important;
+        flex-direction: column !important;
+
+        .column {
+            width: 100% !important;
+            text-align: left !important;
+        }
+    }
+}
+
+.section-box {
+    background-color: var(--bg-card);
+    padding: 1rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.is-fullwidth-mobile {
+    @include mobile {
+        width: 100% !important;
+    }
+}
+
+.has-background-light-dark {
+    background-color: var(--bg-card-hover);
+}
+
+.border-radius {
+    border-radius: 4px;
+}
+
+.current-filter {
+    font-size: 0.9rem;
+    margin-left: 0.5rem;
+    font-weight: normal;
+}
+
+// Ensure search field buttons align correctly
+.search-field {
+    .control.is-expanded {
+        flex-grow: 1;
+    }
+}
+
 /* Two column sidebar+body layout */
 #app {
   min-height: 100%;
