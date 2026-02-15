@@ -447,9 +447,9 @@ export default {
       this.self.templateId = to;
     },
 
-    markdownBody(val) {
+    markdownBody() {
       if (this.isMarkdownMode && this.self.contentType === 'richtext') {
-        // Debounce or just update? For now update. 
+        // Debounce or just update? For now update.
         // Note: Real saving usually happens on mode toggle or explicit save.
         // But to support auto-save features, we should keep the body updated.
         // We don't want to call the API on every keystroke, so we do a simple
