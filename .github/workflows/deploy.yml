@@ -1,12 +1,32 @@
-name: Build and Push Image
+name: Build and Deploy
 
 on:
   push:
     branches: [ master ]
     tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
+  # 1. TEST GATE: Code must pass logic checks before building
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.6'
+
+      - name: Run tests
+        run: go test ./...
+
+  # 2. BUILD GATE: Image must build successfully before deploying
   build-and-push:
+    needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,6 +52,7 @@ jobs:
             ghcr.io/ollisulopuisto/listmonk:latest
             ghcr.io/ollisulopuisto/listmonk:${{ github.sha }}
 
+  # 3. DEPLOY: Only runs if test AND build passed
   deploy-staging:
     needs: build-and-push
     if: github.ref == 'refs/heads/master'
