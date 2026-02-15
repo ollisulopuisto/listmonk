@@ -138,10 +138,8 @@ export default {
       const { editor } = this.$refs.codeEditor;
       const { state } = editor;
       const { from, to } = state.selection.main;
-      const lines = state.doc.sliceString(from, to).split('
-');
-      const text = lines.map(line => `${prefix}${line}`).join('
-');
+      const lines = state.doc.sliceString(from, to).split('\n');
+      const text = lines.map((line) => `${prefix}${line}`).join('\n');
       editor.dispatch({
         changes: { from, to, insert: text },
       });
