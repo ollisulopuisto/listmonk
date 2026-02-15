@@ -64,7 +64,8 @@
     <code-editor lang="html" v-if="self.contentType === 'html'" v-model="self.body" key="editor-html" />
 
     <!-- markdown editor //-->
-    <code-editor lang="markdown" v-if="self.contentType === 'markdown'" v-model="self.body" key="editor-markdown" />
+    <markdown-editor v-if="self.contentType === 'markdown'" v-model="self.body"
+      :disabled="disabled" :is-mobile="isMobile" :id="id" :title="title" :template-id="templateId" />
 
     <!-- plain text //-->
     <b-input v-if="self.contentType === 'plain'" v-model="self.body" type="textarea" name="content" ref="plainEditor"
@@ -84,6 +85,7 @@ import { mapState } from 'vuex';
 import CampaignPreview from './CampaignPreview.vue';
 import VisualEditor from './VisualEditor.vue';
 import RichtextEditor from './RichtextEditor.vue';
+import MarkdownEditor from './MarkdownEditor.vue';
 import markdownToVisualBlock from './editor';
 import CodeEditor from './CodeEditor.vue';
 
@@ -95,6 +97,7 @@ export default {
     'code-editor': CodeEditor,
     'visual-editor': VisualEditor,
     'richtext-editor': RichtextEditor,
+    'markdown-editor': MarkdownEditor,
   },
 
   props: {

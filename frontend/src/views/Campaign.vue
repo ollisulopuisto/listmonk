@@ -171,17 +171,8 @@
       </b-tab-item><!-- campaign -->
 
       <b-tab-item :label="$t('campaigns.content')" icon="text" :disabled="isNew" value="content">
-        <div v-if="isMobile" class="is-flex is-justify-content-center is-align-items-center p-6" style="height: 300px; flex-direction: column;">
-            <b-button size="is-large" type="is-primary" icon-left="pencil" @click="toggleEditorModal">
-                Open Editor
-            </b-button>
-            <p class="mt-4 has-text-grey">
-                Open the fullscreen editor for a better experience.
-            </p>
-        </div>
-
-        <editor v-else-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
-          :templates="templates" :content-types="contentTypes" />
+        <editor v-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
+          :templates="templates" :content-types="contentTypes" :is-mobile="isMobile" />
 
         <div class="columns is-multiline mt-4">
           <div class="column is-6-desktop is-12-tablet">
@@ -315,22 +306,6 @@
     <campaign-preview v-if="isPreviewingArchive" @close="onToggleArchivePreview" type="campaign" :id="data.id"
       :archive-meta="form.archiveMetaStr" :title="data.title" :content-type="data.contentType"
       :template-id="form.archiveTemplateId" is-post is-archive />
-
-    <b-modal :active.sync="isEditorModalOpen" full-screen :can-cancel="false" v-if="isMobile">
-        <div class="modal-card" style="width: auto">
-            <header class="modal-card-head">
-                <p class="modal-card-title">Edit Content</p>
-                <button type="button" class="delete" aria-label="close" @click="toggleEditorModal" />
-            </header>
-            <section class="modal-card-body p-0">
-                 <editor v-if="data.id" v-model="form.content" :id="data.id" :title="data.name" :disabled="!canEdit"
-                  :templates="templates" :content-types="contentTypes" height="calc(100vh - 130px)" :is-mobile="isMobile" />
-            </section>
-             <footer class="modal-card-foot">
-                <b-button @click="toggleEditorModal">{{ $t('globals.buttons.close') }}</b-button>
-            </footer>
-        </div>
-    </b-modal>
   </section>
 </template>
 

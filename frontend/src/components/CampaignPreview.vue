@@ -1,6 +1,20 @@
 <template>
-  <div>
-    <b-modal scroll="keep" @close="close" :aria-modal="true" :active="isVisible">
+  <div :class="{ 'preview-inline': inline }">
+    <div v-if="inline" class="inline-preview-container">
+      <b-loading :active="isLoading" :is-full-page="false" />
+      <form v-if="isPost" method="post" :action="previewURL" target="iframe-inline" ref="form">
+        <input v-if="templateId" type="hidden" name="template_id" :value="templateId" />
+        <input v-if="contentType" type="hidden" name="content_type" :value="contentType" />
+        <input v-if="templateType" type="hidden" name="template_type" :value="templateType" />
+        <input v-if="archiveMeta" type="hidden" name="archive_meta" :value="archiveMeta" />
+        <input v-if="body" type="hidden" name="body" :value="body" />
+      </form>
+
+      <iframe id="iframe-inline" name="iframe-inline" ref="iframe" :title="title" :src="isPost ? 'about:blank' : previewURL"
+        @load="onLoaded" sandbox="allow-scripts" />
+    </div>
+
+    <b-modal v-else scroll="keep" @close="close" :aria-modal="true" :active="isVisible">
       <div>
         <div class="modal-card" style="width: auto">
           <header class="modal-card-head">
@@ -55,6 +69,7 @@ export default {
     contentType: { type: String, default: '' },
     templateId: { type: [Number, null], default: null },
     isArchive: { type: Boolean, default: false },
+    inline: { type: Boolean, default: false },
   },
 
   data() {
@@ -82,6 +97,13 @@ export default {
         this.isLoading = false;
       }
     },
+
+    submitForm() {
+      if (this.isPost && this.$refs.form) {
+        this.$refs.form.submit();
+        this.formSubmitted = true;
+      }
+    },
   },
 
   computed: {
@@ -102,13 +124,42 @@ export default {
     },
   },
 
+  watch: {
+    body() {
+      if (this.inline) {
+        this.submitForm();
+      }
+    },
+  },
+
   mounted() {
     if (this.isPost) {
       setTimeout(() => {
-        this.$refs.form.submit();
-        this.formSubmitted = true;
+        this.submitForm();
       }, 100);
     }
   },
 };
 </script>
+
+<style lang="scss" scoped>
+.preview-inline {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  .inline-preview-container {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+
+    iframe {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  }
+}
+</style>
