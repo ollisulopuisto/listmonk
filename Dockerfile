@@ -8,7 +8,9 @@ RUN apk add --no-cache yarn
 # Copy all frontend files
 COPY frontend ./frontend
 COPY static ./static
-COPY .gitignore ./frontend/.gitignore
+
+# Ensure an empty .gitignore exists for ESLint
+RUN touch frontend/.gitignore
 
 # Build App Frontend
 WORKDIR /app/frontend
@@ -34,7 +36,7 @@ RUN go install github.com/knadh/stuffbin/stuffbin@latest
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code and gitignore
+# Copy source code
 COPY . .
 
 # Copy built frontend assets from previous stage
