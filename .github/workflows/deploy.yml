@@ -65,7 +65,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            /opt/stacks/scripts/deploy.sh listmonk deploy
+            /opt/stacks/scripts/deploy.sh listmonk deploy ${{ github.sha }}
 
   deploy-prod:
     needs: build-and-push
