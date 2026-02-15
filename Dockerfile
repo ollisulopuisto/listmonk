@@ -1,5 +1,5 @@
 # Stage 1: Build Frontend
-FROM node:22-alpine AS frontend-builder
+FROM docker.io/library/node:22-alpine AS frontend-builder
 WORKDIR /app
 
 # Install yarn
@@ -26,7 +26,7 @@ RUN mkdir -p frontend/public/static/email-builder && \
     cp -r frontend/email-builder/dist/* frontend/public/static/email-builder/
 
 # Stage 2: Build Backend
-FROM golang:1.24-alpine AS backend-builder
+FROM docker.io/library/golang:1.24-alpine AS backend-builder
 WORKDIR /app
 
 # Install stuffbin
@@ -56,7 +56,7 @@ RUN /go/bin/stuffbin -a stuff -in listmonk -out listmonk \
     i18n:/i18n
 
 # Stage 3: Final Runtime Image
-FROM alpine:latest
+FROM docker.io/library/alpine:latest
 WORKDIR /listmonk
 
 # Install runtime dependencies
