@@ -2,7 +2,7 @@
 {{ template "header" .}}
 
 <section class="center">
-	<a href="admin" class="button">{{ L.T "users.login" }}</a>
+	<a href="{{ .RootURL }}/admin" class="button">{{ L.T "users.login" }}</a>
 
 	<div class="home-options">
 		{{ if .EnablePublicSubPage }}

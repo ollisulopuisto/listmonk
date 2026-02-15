@@ -12,14 +12,14 @@
 			href="{{ .RootURL }}/archive.xml" />
 	{{ end }}
 
-	<link href="/public/static/style.css?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
-	<link href="/public/custom.css?v={{ .AssetVersion }}" rel="stylesheet" type="text/css">
-	<script src="/public/custom.js?v={{ .AssetVersion }}" async defer></script>
+	<link href="{{ .RootURL }}/public/static/style.css?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
+	<link href="{{ .RootURL }}/public/custom.css?v={{ .AssetVersion }}" rel="stylesheet" type="text/css">
+	<script src="{{ .RootURL }}/public/custom.js?v={{ .AssetVersion }}" async defer></script>
 
 	{{ if ne .FaviconURL "" }}
 		<link rel="icon" href="{{ .FaviconURL }}" type="image/x-icon" />
 	{{ else }}
-		<link rel="icon" href="/public/static/favicon.png?v={{ .AssetVersion }}" type="image/png" />
+		<link rel="icon" href="{{ .RootURL }}/public/static/favicon.png?v={{ .AssetVersion }}" type="image/png" />
 	{{ end }}
 </head>
 <body>
@@ -30,7 +30,7 @@
 				{{ if ne .LogoURL "" }}
 					<img src="{{ .LogoURL }}" alt="{{ .Data.Title }}" />
 				{{ else }}
-					<img src="/public/static/logo.svg?v={{ .AssetVersion }}" alt="{{ .Data.Title }}" />
+					<img src="{{ .RootURL }}/public/static/logo.svg?v={{ .AssetVersion }}" alt="{{ .Data.Title }}" />
 				{{ end }}
 				</a>
 			</div>

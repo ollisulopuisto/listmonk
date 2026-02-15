@@ -5,7 +5,7 @@
 	<h2>{{ .L.T "users.twoFA"}}</h2>
 	<p>{{ .L.T "users.totpCodeHelp" }}</p>
 
-	<form method="post" action="/admin/login/twofa" class="form">
+	<form method="post" action="{{ .RootURL }}/admin/login/twofa" class="form">
 		<div>
 			<input type="hidden" name="token" value="{{ .Data.Token }}" />
 			<input type="hidden" name="next" value="{{ .Data.NextURI }}" />

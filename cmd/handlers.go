@@ -312,6 +312,12 @@ func (a *App) AdminPage(c echo.Context) error {
 
 	b = bytes.ReplaceAll(b, []byte("asset_version"), []byte(a.cfg.AssetVersion))
 
+	// If there's a RootURL, replace the root-relative /admin/ paths
+	// with the absolute RootURL.
+	if a.urlCfg.RootURL != "" {
+		b = bytes.ReplaceAll(b, []byte("/admin/"), []byte(a.urlCfg.RootURL+"/admin/"))
+	}
+
 	return c.HTMLBlob(http.StatusOK, b)
 }
 
