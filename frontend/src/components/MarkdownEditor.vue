@@ -1,13 +1,28 @@
 <template>
   <div class="markdown-editor-container" :class="{ 'is-mobile': isMobile }">
     <div class="editor-header mb-2" v-if="!disabled">
-      <div class="buttons">
-        <b-button size="is-small" icon-left="format-bold" @click="wrapSelection('**', '**')" />
-        <b-button size="is-small" icon-left="format-italic" @click="wrapSelection('*', '*')" />
-        <b-button size="is-small" icon-left="format-list-bulleted" @click="prefixLines('- ')" />
-        <b-button size="is-small" icon-left="format-list-numbered" @click="prefixLines('1. ')" />
-        <b-button size="is-small" icon-left="link" @click="wrapSelection('[', '](url)')" />
-        <b-button size="is-small" icon-left="image" @click="isMediaVisible = true" />
+      <div class="buttons md-toolbar">
+        <b-button size="is-small" @click="wrapSelection('**', '**')">
+          <span class="material-symbols-outlined">format_bold</span>
+        </b-button>
+        <b-button size="is-small" @click="wrapSelection('*', '*')">
+          <span class="material-symbols-outlined">format_italic</span>
+        </b-button>
+        <b-button size="is-small" @click="wrapSelection('`', '`')">
+          <span class="material-symbols-outlined">code</span>
+        </b-button>
+        <b-button size="is-small" @click="prefixLines('- ')">
+          <span class="material-symbols-outlined">format_list_bulleted</span>
+        </b-button>
+        <b-button size="is-small" @click="prefixLines('1. ')">
+          <span class="material-symbols-outlined">format_list_numbered</span>
+        </b-button>
+        <b-button size="is-small" @click="wrapSelection('[', '](url)')">
+          <span class="material-symbols-outlined">link</span>
+        </b-button>
+        <b-button size="is-small" @click="isMediaVisible = true">
+          <span class="material-symbols-outlined">image</span>
+        </b-button>
       </div>
     </div>
 
@@ -162,6 +177,10 @@ export default {
     padding: 0.5rem;
     border-bottom: 1px solid #dbdbdb;
     background: #f5f5f5;
+
+    .md-toolbar .material-symbols-outlined {
+      font-size: 18px;
+    }
   }
 
   .editor-layout {
