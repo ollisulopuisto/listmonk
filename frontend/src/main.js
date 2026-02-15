@@ -1,5 +1,6 @@
 import Vue from 'vue';
 import Buefy from 'buefy';
+import 'buefy/dist/buefy.css';
 import VueI18n from 'vue-i18n';
 
 import App from './App.vue';
