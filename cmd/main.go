@@ -186,6 +186,19 @@ func init() {
 		initSettings(q.Query, db, ko)
 	}
 
+	// Re-load environment variables and merge into the loaded config so that
+	// they take priority over settings loaded from the DB.
+	if err := ko.Load(env.Provider("LISTMONK_", ".", func(s string) string {
+		key := strings.ToLower(strings.TrimPrefix(s, "LISTMONK_"))
+		key = strings.Replace(key, "__", ".", -1)
+		if !strings.Contains(key, ".") {
+			key = strings.Replace(key, "_", "-", -1)
+		}
+		return key
+	}), nil); err != nil {
+		lo.Fatalf("error loading config from env: %v", err)
+	}
+
 	// Prepare queries.
 	queries = prepareQueries(qMap, db, ko)
 }
