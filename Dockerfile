@@ -34,7 +34,7 @@ RUN go install github.com/knadh/stuffbin/stuffbin@latest
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code and gitignore
+# Copy source code
 COPY . .
 
 # Copy built frontend assets from previous stage
