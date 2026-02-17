@@ -1013,8 +1013,29 @@ section.dashboard {
     padding: 10px;
   }
 
+  /* Fix: Bulma tiles don't support is-multiline, so force flex-wrap */
+  .tile.is-multiline {
+    flex-wrap: wrap;
+  }
+
+  .tile.is-parent.is-6-desktop {
+    flex: none;
+    width: 50%;
+  }
+
+  .tile.is-parent.is-12 {
+    flex: none;
+    width: 100%;
+  }
+
+  @media screen and (max-width: 1023px) {
+    .tile.is-parent.is-6-desktop {
+      width: 100%;
+    }
+  }
+
   .counts .column {
-    padding: 30px;
+    padding: 15px;
   }
 
   .level-item {
@@ -1031,7 +1052,7 @@ section.dashboard {
   label {
     font-weight: bold;
     display: inline-block;
-    min-width: 50px;
+    min-width: 30px;
     text-align: right;
   }
 
