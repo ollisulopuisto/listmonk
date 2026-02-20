@@ -18,7 +18,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: '1.24'
 
       - name: Run tests
         run: go test ./...
@@ -36,6 +36,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Get short SHA
+        id: slug
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -51,6 +55,7 @@ jobs:
           tags: |
             ghcr.io/ollisulopuisto/listmonk:latest
             ghcr.io/ollisulopuisto/listmonk:${{ github.sha }}
+            ghcr.io/ollisulopuisto/listmonk:${{ steps.slug.outputs.sha_short }}
 
   # 3. DEPLOY: Only runs if test AND build passed
   deploy-staging:
