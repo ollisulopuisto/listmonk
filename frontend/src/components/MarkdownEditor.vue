@@ -178,8 +178,20 @@ export default {
     border-bottom: 1px solid #dbdbdb;
     background: #f5f5f5;
 
-    .md-toolbar .material-symbols-outlined {
-      font-size: 18px;
+    .md-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+
+      .button {
+        width: auto;
+        margin-bottom: 0;
+        padding: 4px 8px;
+      }
+
+      .material-symbols-outlined {
+        font-size: 18px;
+      }
     }
   }
 
