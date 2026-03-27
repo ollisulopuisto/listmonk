@@ -106,6 +106,9 @@ func New(opt Opt, q *Queries, lo *log.Logger) (*Manager, error) {
 		}
 
 		if opt.Lettermint.Enabled {
+			if opt.Lettermint.Key == "" {
+				return nil, errors.New("lettermint webhook enabled but secret key is not set")
+			}
 			m.Lettermint = webhooks.NewLettermint([]byte(opt.Lettermint.Key))
 		}
 	}
