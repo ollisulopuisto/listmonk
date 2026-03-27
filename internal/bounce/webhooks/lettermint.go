@@ -97,7 +97,14 @@ func (l *Lettermint) ProcessBounce(sig string, body []byte) ([]models.Bounce, er
 		}
 	}
 
-	t, _ := time.Parse(time.RFC3339, n.Timestamp)
+	var t time.Time
+	if n.Timestamp != "" {
+		var err error
+		t, err = time.Parse(time.RFC3339, n.Timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing timestamp '%s': %v", n.Timestamp, err)
+		}
+	}
 	if t.IsZero() {
 		t = time.Now()
 	}
