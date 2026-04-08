@@ -19,11 +19,13 @@
       </div>
 
       <div class="column is-6 has-text-right">
-        <div v-if="canManage" class="buttons is-right">
-          <b-button v-if="isEditing && canEdit" @click="() => onSubmit('update')" :loading="loading.campaigns"
-            type="is-primary" icon-left="content-save-outline" data-cy="btn-save" />
+        <div v-if="canManage || canSend" class="buttons is-right">
+          <b-button v-if="isEditing && canEdit && canManage" @click="() => onSubmit('update')" :loading="loading.campaigns"
+            type="is-primary" icon-left="content-save-outline" data-cy="btn-save" aria-keyshortcuts="ctrl+s">
+            <span class="has-kbd is-hidden-mobile">{{ $t('globals.buttons.saveChanges') }} <span class="kbd">Ctrl+S</span></span>
+          </b-button>
 
-          <b-dropdown v-if="isEditing && (canStart || canSchedule || canUnSchedule)" position="is-bottom-left"
+          <b-dropdown v-if="isEditing && canSend && (canStart || canSchedule || canUnSchedule)" position="is-bottom-left"
             append-to-body>
             <template #trigger>
               <b-button type="is-primary" icon-right="chevron-down">
@@ -703,6 +705,10 @@ export default Vue.extend({
 
     canManage() {
       return this.$can('campaigns:manage_all', 'campaigns:manage');
+    },
+
+    canSend() {
+      return this.$can('campaigns:send');
     },
 
     canEdit() {
