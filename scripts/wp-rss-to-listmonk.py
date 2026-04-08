@@ -85,7 +85,14 @@ def main():
         return
 
     logger.info(f"Fetching RSS feed: {RSS_FEED_URL}")
-    feed = feedparser.parse(RSS_FEED_URL)
+    try:
+        response = requests.get(RSS_FEED_URL, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Error fetching RSS feed: {e}")
+        return
+
+    feed = feedparser.parse(response.content)
     if feed.bozo:
         logger.error(f"Error parsing RSS feed: {feed.bozo_exception}")
         return
