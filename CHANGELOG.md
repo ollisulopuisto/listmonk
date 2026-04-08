@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.04.08.2020] - 2026-04-08
+
+### Added
+- RSS to Listmonk integration: Added `scripts/wp-rss-to-listmonk.py` to fetch blog posts from WordPress RSS feeds and create draft campaigns in listmonk.
+- Configuration sample `.env.rss.sample` and setup documentation in `scripts/README.md`.
+
 ## [v26.03.27.2011] - 2026-03-27
 
 ### Added
