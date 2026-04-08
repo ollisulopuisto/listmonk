@@ -21,7 +21,7 @@
       <div class="column is-6 has-text-right">
         <div v-if="canManage || canSend" class="buttons is-right">
           <b-button v-if="isEditing && canEdit && canManage" @click="() => onSubmit('update')" :loading="loading.campaigns"
-            type="is-primary" icon-left="content-save-outline" data-cy="btn-save" aria-keyshortcuts="ctrl+s">
+            type="is-primary" icon-left="content-save-outline" data-cy="btn-save" aria-keyshortcuts="Control+S">
             <span class="has-kbd is-hidden-mobile">{{ $t('globals.buttons.saveChanges') }} <span class="kbd">Ctrl+S</span></span>
           </b-button>
 
