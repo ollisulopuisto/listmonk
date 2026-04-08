@@ -116,11 +116,14 @@ def main():
         title = post.get("title", "No Title")
         # WordPress RSS usually has 'content' or 'summary'
         content = post.get("content")
-        body = (
-            content[0].get("value") if content and isinstance(content, list)
-            else post.get("summary")
-            or post.get("description")
-        )
+        body = None
+        if isinstance(content, list) and content:
+            first_content = content[0]
+            if hasattr(first_content, "get"):
+                body = first_content.get("value")
+
+        if not body:
+            body = post.get("summary") or post.get("description")
         link = post.get("link")
 
         # Add a link to the original post if body is short or missing
