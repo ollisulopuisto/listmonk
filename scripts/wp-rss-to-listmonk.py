@@ -61,7 +61,7 @@ def create_campaign(title, body, list_ids):
         "messenger": "email",
     }
 
-    response = requests.post(url, json=data, auth=(LISTMONK_USER, LISTMONK_PASS))
+    response = requests.post(url, json=data, auth=(LISTMONK_USER, LISTMONK_PASS), timeout=10)
 
     if response.status_code == 200:
         logger.info(f"Successfully created campaign: {title}")
