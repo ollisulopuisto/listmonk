@@ -116,9 +116,8 @@ def main():
         if result:
             post_id = post.get("id") or post.get("link")
             processed_ids.add(post_id)
-
-    state["processed_ids"] = list(processed_ids)
-    save_state(state)
+            state["processed_ids"] = list(processed_ids)
+            save_state(state)
 
 
 if __name__ == "__main__":
