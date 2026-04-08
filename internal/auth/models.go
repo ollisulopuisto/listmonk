@@ -17,6 +17,7 @@ type PermType uint8
 const (
 	PermTypeGet PermType = 1 << iota
 	PermTypeManage
+	PermTypeSend
 )
 
 const (

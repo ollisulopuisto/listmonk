@@ -25,4 +25,21 @@ Tämä projekti noudattaa tiukkaa PR-pohjaista (Pull Request) kehitysmallia vika
  - Main-eheys: main-haaran on oltava aina julkaisukelpoinen. Jos CI epäonnistuu PR-haarassa, main ei saastu.
  - Rollback-valmius: Koska käytössä on blue/green-julkaisu, jokaisen mergetyn PR:n on oltava helposti peruttavissa (git revert) ilman sivuvaikutuksia muihin ominaisuuksiin.
 
+6. Editorin koskemattomuus (Editor Integrity)
+ - Projektissa on tehty mittavia muutoksia editoriin (Tiptap-integraatio upstreamin TinyMCE:n sijaan).
+ - **Kielto:** Älä koskaan ylikirjoita editoria upstreamin TinyMCE-pohjaisilla muutoksilla.
+ - Kriittiset tiedostot ja kansiot:
+   - `frontend/src/components/Editor.vue`
+   - `frontend/src/components/RichtextEditor.vue`
+   - `frontend/src/components/MarkdownEditor.vue`
+   - `frontend/src/components/EmailMarkdownEditor.vue`
+   - `frontend/src/components/VisualEditor.vue`
+   - `frontend/src/components/CodeEditor.vue`
+   - `frontend/email-builder/`
+
+7. Upstream-synkronoinnin strategiat
+ - **Manuaalinen konfliktointi:** Kun `upstream/master` mergetään, tarkista aina editoriin liittyvät tiedostot erikseen. Jos upstream tuo muutoksia editoriin, ratkaise konfliktit suosimalla paikallisia (ours) muutoksia editorin ydintoiminnallisuuden osalta.
+ - **Cherry-pick -vaihtoehto:** Jos upstream-muutokset ovat massiivisia, harkitse vain kriittisten tietoturvakorjausten tai uusien ominaisuuksien cherry-pickaamista editoritiedostojen ulkopuolelta.
+ - **Validointi:** Jokaisen synkronoinnin jälkeen varmista editorin toimivuus (sekä Tiptap että email-builder) ennen mergaamista main-haaraan.
+
 Kun PR on tehty, käy tarkistamassa siihen tulleet kommentit ja implementoi niissä mainitut korjaukset tarpeen mukaan ennen mergeä.
