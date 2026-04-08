@@ -11,6 +11,7 @@
 - [ ] **Domain Setup**: Ensure `uutiskirje.sulopuis.to` is correctly pointed and handled by the reverse proxy on the server.
 
 ### 📧 Email & Integration
+- [x] **RSS to Listmonk**: Created `scripts/wp-rss-to-listmonk.py` to fetch blog posts and create draft campaigns.
 - [ ] **Resend Configuration**: Complete SMTP setup in the dashboard using `RESEND_CONFIG.md` as a reference.
 - [ ] **Bounce Handling**: (Optional) Design/Implement a middleware to transform Resend webhooks into listmonk's generic bounce format.
 
