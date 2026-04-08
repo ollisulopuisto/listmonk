@@ -23,6 +23,7 @@ This directory contains utility scripts for listmonk.
     ```bash
     cp scripts/.env.rss.sample .env
     ```
+    The listmonk credential in `.env` should be an API user/token, not your admin/dashboard password. Create it in the listmonk UI under `Admin → Users`, then copy that API username/token into the environment file.
 
 3.  **Run**:
     ```bash
