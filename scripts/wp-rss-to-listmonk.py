@@ -102,9 +102,10 @@ def main():
     for post in reversed(new_posts):  # Process oldest first
         title = post.get("title", "No Title")
         # WordPress RSS usually has 'content' or 'summary'
+        content = post.get("content")
         body = (
-            post.get("content", [{"value": ""}])[0].get("value")
-            or post.get("summary")
+            content[0].get("value") if content and isinstance(content, list)
+            else post.get("summary")
             or post.get("description")
         )
         link = post.get("link")
