@@ -61,7 +61,13 @@ def create_campaign(title, body, list_ids):
         "messenger": "email",
     }
 
-    response = requests.post(url, json=data, auth=(LISTMONK_USER, LISTMONK_PASS), timeout=10)
+    try:
+        response = requests.post(
+            url, json=data, auth=(LISTMONK_USER, LISTMONK_PASS), timeout=10
+        )
+    except requests.RequestException as e:
+        logger.error(f"Failed to create campaign '{title}' due to request error: {e}")
+        return None
 
     if response.status_code == 200:
         logger.info(f"Successfully created campaign: {title}")
