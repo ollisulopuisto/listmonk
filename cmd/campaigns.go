@@ -364,7 +364,7 @@ func (a *App) UpdateCampaignStatus(c echo.Context) error {
 	id := getID(c)
 
 	// Check if the user has access to the campaign.
-	if err := a.checkCampaignPerm(auth.PermTypeManage, id, c); err != nil {
+	if err := a.checkCampaignPerm(auth.PermTypeSend, id, c); err != nil {
 		return err
 	}
 
@@ -812,6 +812,12 @@ func (a *App) checkCampaignPerm(types auth.PermType, id int, c echo.Context) err
 		if user.HasPerm(auth.PermCampaignsGetAll) {
 			return nil
 		}
+	} else if types&auth.PermTypeSend != 0 {
+		// It's a send request and there's a blanket manage_all permission.
+		if user.HasPerm(auth.PermCampaignsManageAll) {
+			return nil
+		}
+		perm = auth.PermCampaignsSend
 	} else {
 		// It's a manage request and there's a blanket manage_all permission.
 		if user.HasPerm(auth.PermCampaignsManageAll) {

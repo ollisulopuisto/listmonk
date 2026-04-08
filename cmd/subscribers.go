@@ -71,6 +71,8 @@ func (a *App) GetSubscriber(c echo.Context) error {
 		return err
 	}
 
+	maskRestrictedSubLists(user, &out)
+
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
@@ -125,6 +127,10 @@ func (a *App) QuerySubscribers(c echo.Context) error {
 	res, total, err := a.core.QuerySubscribers(searchStr, query, listIDs, subStatus, order, orderBy, pg.Offset, pg.Limit)
 	if err != nil {
 		return err
+	}
+
+	for i := range res {
+		maskRestrictedSubLists(user, &res[i])
 	}
 
 	out := models.PageResults{
@@ -293,10 +299,80 @@ func (a *App) UpdateSubscriber(c echo.Context) error {
 		permittedLists = []int{}
 	}
 
-	out, _, err := a.core.UpdateSubscriberWithLists(id, req.Subscriber, listIDs, nil, req.PreconfirmSubs, true, false, permittedLists)
+	out, _, err := a.core.UpdateSubscriberWithLists(id, req.Subscriber, listIDs, nil, req.PreconfirmSubs, true, false, permittedLists, false)
 	if err != nil {
 		return err
 	}
+
+	maskRestrictedSubLists(user, &out)
+
+	return c.JSON(http.StatusOK, okResp{out})
+}
+
+// PatchSubscriber handles partially modifying a subscriber.
+// Only fields present in the request body are updated.
+func (a *App) PatchSubscriber(c echo.Context) error {
+	user := auth.GetUser(c)
+	id := getID(c)
+
+	// Check if the user has access to at least one of the lists on the subscriber.
+	if err := a.hasSubPerm(user, []int{id}); err != nil {
+		return err
+	}
+
+	// Fetch the sub subscriber from the DB.
+	sub, err := a.core.GetSubscriber(id, "", "")
+	if err != nil {
+		return err
+	}
+
+	// Prepopulate the incoming request struct with existing values.
+	// Rather than tediously and conditionally checking each incoming field, we can simply
+	// overwrite everything in the DB with the incoming fields+existing fields.
+	req := struct {
+		models.Subscriber
+		Lists          *[]int `json:"lists"`
+		PreconfirmSubs bool   `json:"preconfirm_subscriptions"`
+	}{
+		Subscriber: sub,
+	}
+
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	if em, err := a.importer.SanitizeEmail(req.Email); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	} else {
+		req.Email = em
+	}
+
+	if req.Name != "" && !strHasLen(req.Name, 1, stdInputMaxLen) {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("subscribers.invalidName"))
+	}
+
+	// If lists were explicitly sent, replace the existing subscriptions.
+	overwriteSubs := false
+	var listIDs []int
+	if req.Lists != nil {
+		overwriteSubs = true
+		listIDs = user.FilterListsByPerm(auth.PermTypeManage, *req.Lists)
+		if len(*req.Lists) > 0 && len(listIDs) == 0 {
+			return echo.NewHTTPError(http.StatusForbidden, a.i18n.Ts("globals.messages.permissionDenied", "name", "lists"))
+		}
+	}
+
+	allPerm, permittedLists := user.GetPermittedLists(auth.PermTypeManage)
+	if allPerm {
+		permittedLists = []int{}
+	}
+
+	out, _, err := a.core.UpdateSubscriberWithLists(id, req.Subscriber, listIDs, nil, req.PreconfirmSubs, overwriteSubs, false, permittedLists, false)
+	if err != nil {
+		return err
+	}
+
+	maskRestrictedSubLists(user, &out)
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
@@ -678,6 +754,34 @@ func (a *App) exportSubscriberData(id int, subUUID string, exportables map[strin
 	}
 
 	return data, b, nil
+}
+
+// maskRestrictedSubLists replaces list names with "*Unknown" for lists
+// the user doesn't have permission on. This appears on the subscriber
+// details UI and prevents users without access to certain lists from seeing their names.
+func maskRestrictedSubLists(user auth.User, sub *models.Subscriber) {
+	if user.HasPerm(auth.PermListManageAll) || user.HasPerm(auth.PermListGetAll) {
+		return
+	}
+
+	// Hacky JSON manipulation (for now).
+	var lists []map[string]interface{}
+	if err := json.Unmarshal(sub.Lists, &lists); err != nil || len(lists) == 0 {
+		return
+	}
+
+	for i, l := range lists {
+		id, _ := l["id"].(float64)
+		if user.HasListPerm(auth.PermTypeGet, int(id)) != nil {
+			lists[i]["name"] = "*Unknown"
+			lists[i]["restricted"] = true
+			delete(lists[i], "description")
+		}
+	}
+
+	if b, err := json.Marshal(lists); err == nil {
+		sub.Lists = b
+	}
 }
 
 // hasSubPerm checks whether the current user has permission to access the given list

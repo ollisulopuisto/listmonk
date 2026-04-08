@@ -17,6 +17,7 @@ type PermType uint8
 const (
 	PermTypeGet PermType = 1 << iota
 	PermTypeManage
+	PermTypeSend
 )
 
 const (
@@ -57,6 +58,7 @@ const (
 	PermCampaignsGetAnalytics = "campaigns:get_analytics"
 	PermCampaignsManage       = "campaigns:manage"
 	PermCampaignsManageAll    = "campaigns:manage_all"
+	PermCampaignsSend         = "campaigns:send"
 	PermBouncesGet            = "bounces:get"
 	PermBouncesManage         = "bounces:manage"
 	PermWebhooksPostBounce    = "webhooks:post_bounce"
