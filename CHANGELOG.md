@@ -5,11 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
-## [v26.04.08.2020] - 2026-04-08
+## [v26.04.08.2031] - 2026-04-08
 
 ### Added
 - RSS to Listmonk integration: Added `scripts/wp-rss-to-listmonk.py` to fetch blog posts from WordPress RSS feeds and create draft campaigns in listmonk.
 - Configuration sample `.env.rss.sample` and setup documentation in `scripts/README.md`.
+
+### Changed
+- Improved API authentication in `scripts/wp-rss-to-listmonk.py`: Renamed credentials to `LISTMONK_API_USER`/`LISTMONK_API_TOKEN` and removed insecure defaults to ensure explicit configuration.
 
 ## [v26.03.27.2011] - 2026-03-27
 

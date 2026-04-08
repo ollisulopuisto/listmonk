@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 LISTMONK_URL = os.getenv("LISTMONK_URL", "http://localhost:9000")
-LISTMONK_USER = os.getenv("LISTMONK_USER", "admin")
-LISTMONK_PASS = os.getenv("LISTMONK_PASS", "listmonk")
+LISTMONK_API_USER = os.getenv("LISTMONK_API_USER")
+LISTMONK_API_TOKEN = os.getenv("LISTMONK_API_TOKEN")
 RSS_FEED_URL = os.getenv("RSS_FEED_URL")
 LIST_ID = int(os.getenv("LIST_ID", "1"))
 STATE_FILE = os.getenv("STATE_FILE", "rss_state.json")
@@ -63,7 +63,7 @@ def create_campaign(title, body, list_ids):
 
     try:
         response = requests.post(
-            url, json=data, auth=(LISTMONK_USER, LISTMONK_PASS), timeout=10
+            url, json=data, auth=(LISTMONK_API_USER, LISTMONK_API_TOKEN), timeout=10
         )
     except requests.RequestException as e:
         logger.error(f"Failed to create campaign '{title}' due to request error: {e}")
@@ -82,6 +82,10 @@ def create_campaign(title, body, list_ids):
 def main():
     if not RSS_FEED_URL:
         logger.error("RSS_FEED_URL is not set.")
+        return
+
+    if not LISTMONK_API_USER or not LISTMONK_API_TOKEN:
+        logger.error("LISTMONK_API_USER and LISTMONK_API_TOKEN must be set.")
         return
 
     logger.info(f"Fetching RSS feed: {RSS_FEED_URL}")
