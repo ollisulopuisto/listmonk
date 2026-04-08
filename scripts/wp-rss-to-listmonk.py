@@ -80,6 +80,9 @@ def main():
 
     logger.info(f"Fetching RSS feed: {RSS_FEED_URL}")
     feed = feedparser.parse(RSS_FEED_URL)
+    if feed.bozo:
+        logger.error(f"Error parsing RSS feed: {feed.bozo_exception}")
+        return
 
     state = load_state()
     processed_ids = set(state.get("processed_ids", []))
