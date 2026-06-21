@@ -18,9 +18,9 @@
       </header>
       <hr />
 
-      <section class="wrap" v-if="form">
-        <b-tabs type="is-boxed" :animated="false" v-model="tab">
-          <b-tab-item :label="$t('settings.general.name')" label-position="on-border">
+      <section class="wrap settings-wrap" v-if="form">
+        <b-tabs class="settings-tabs" vertical :animated="false" v-model="tab">
+          <b-tab-item :label="$t('settings.general.name')">
             <general-settings :form="form" :key="key" />
           </b-tab-item><!-- general -->
 
@@ -150,6 +150,12 @@ export default Vue.extend({
         form['bounce.sendgrid_key'] = '';
       } else if (this.hasDummy(form['bounce.sendgrid_key'])) {
         hasDummy = 'sendgrid';
+      }
+
+      if (this.isDummy(form['bounce.azure'].shared_secret)) {
+        form['bounce.azure'].shared_secret = '';
+      } else if (this.hasDummy(form['bounce.azure'].shared_secret)) {
+        hasDummy = 'azure shared secret';
       }
 
       if (this.isDummy(form['security.captcha'].hcaptcha.secret)) {
