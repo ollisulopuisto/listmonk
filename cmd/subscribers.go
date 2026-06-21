@@ -757,7 +757,7 @@ func (a *App) exportSubscriberData(id int, subUUID string, exportables map[strin
 }
 
 // maskRestrictedSubLists replaces list names with "*Unknown" for lists
-// the user doesn't have permission on. This appears on the subscriber
+// the user doesn't have read access to. This appears on the subscriber
 // details UI and prevents users without access to certain lists from seeing their names.
 func maskRestrictedSubLists(user auth.User, sub *models.Subscriber) {
 	if user.HasPerm(auth.PermListManageAll) || user.HasPerm(auth.PermListGetAll) {
@@ -772,7 +772,8 @@ func maskRestrictedSubLists(user auth.User, sub *models.Subscriber) {
 
 	for i, l := range lists {
 		id, _ := l["id"].(float64)
-		if user.HasListPerm(auth.PermTypeGet, int(id)) != nil {
+		if user.HasListPerm(auth.PermTypeGet, int(id)) != nil &&
+			user.HasListPerm(auth.PermTypeManage, int(id)) != nil {
 			lists[i]["name"] = "*Unknown"
 			lists[i]["restricted"] = true
 			delete(lists[i], "description")

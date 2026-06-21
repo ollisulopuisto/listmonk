@@ -113,8 +113,15 @@ func (a *App) BlocklistBouncedSubscribers(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// BounceWebhook renders the HTML preview of a template.
+// BounceWebhook handles incoming bounce webhook notifications from various providers.
 func (a *App) BounceWebhook(c echo.Context) error {
+	// If bounce processing is disabled, a.bounce will be nil.
+	// Return early to prevent nil pointer dereference.
+	if a.bounce == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable,
+			a.i18n.Ts("globals.messages.internalError"))
+	}
+
 	// Read the request body instead of using c.Bind() to read to save the entire raw request as meta.
 	rawReq, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -170,6 +177,31 @@ func (a *App) BounceWebhook(c echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 			}
 			bounces = append(bounces, b)
+
+		default:
+			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
+		}
+
+	// Azure ACS through Event Grid.
+	case service == "azure" && a.bounce.Azure != nil:
+		switch c.Request().Header.Get("aeg-event-type") {
+		// Event Grid webhook registration validation.
+		case "SubscriptionValidation", "SubscriptionValidationEvent":
+			res, err := a.bounce.Azure.ProcessSubscription(rawReq)
+			if err != nil {
+				a.log.Printf("error processing Azure Event Grid subscription validation: %v", err)
+				return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
+			}
+			return c.JSONBlob(http.StatusOK, res)
+
+		// Regular event delivery.
+		case "", "Notification":
+			bs, err := a.bounce.Azure.ProcessBounce(c.Request(), rawReq)
+			if err != nil {
+				a.log.Printf("error processing Azure Event Grid notification: %v", err)
+				return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
+			}
+			bounces = append(bounces, bs...)
 
 		default:
 			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))

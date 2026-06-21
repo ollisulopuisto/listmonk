@@ -3,7 +3,6 @@ package models
 import (
 	"fmt"
 	"html/template"
-	"strings"
 	txttpl "text/template"
 	"time"
 
@@ -31,8 +30,9 @@ type Template struct {
 	IsDefault  bool        `db:"is_default" json:"is_default"`
 
 	// Only relevant to tx (transactional) templates.
-	SubjectTpl *txttpl.Template   `json:"-"`
-	Tpl        *template.Template `json:"-"`
+	SubjectTpl  *txttpl.Template   `json:"-"`
+	Tpl         *template.Template `json:"-"`
+	Attachments []Attachment       `json:"-"`
 }
 
 // Compile compiles a template body and subject (only for tx templates) and
@@ -45,7 +45,7 @@ func (t *Template) Compile(f template.FuncMap) error {
 	t.Tpl = tpl
 
 	// If the subject line has a template string, compile it.
-	if strings.Contains(t.Subject, "{{") {
+	if hasTplExpr(t.Subject) {
 		subj := t.Subject
 
 		subjTpl, err := txttpl.New(BaseTpl).Funcs(txttpl.FuncMap(f)).Parse(subj)
@@ -78,4 +78,27 @@ type CampaignAnalyticsCount struct {
 type CampaignAnalyticsLink struct {
 	URL   string `db:"url" json:"url"`
 	Count int    `db:"count" json:"count"`
+}
+
+type CampaignViewExport struct {
+	CampaignID     int       `db:"campaign_id"`
+	CampaignUUID   string    `db:"campaign_uuid"`
+	CampaignName   string    `db:"campaign_name"`
+	SubscriberID   int       `db:"subscriber_id"`
+	SubscriberUUID string    `db:"subscriber_uuid"`
+	Email          string    `db:"email"`
+	SubscriberName string    `db:"subscriber_name"`
+	CreatedAt      time.Time `db:"created_at"`
+}
+
+type CampaignClickExport struct {
+	CampaignID     int       `db:"campaign_id"`
+	CampaignUUID   string    `db:"campaign_uuid"`
+	CampaignName   string    `db:"campaign_name"`
+	SubscriberID   int       `db:"subscriber_id"`
+	SubscriberUUID string    `db:"subscriber_uuid"`
+	Email          string    `db:"email"`
+	SubscriberName string    `db:"subscriber_name"`
+	URL            string    `db:"url"`
+	CreatedAt      time.Time `db:"created_at"`
 }

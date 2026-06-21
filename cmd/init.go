@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -85,6 +86,7 @@ type Config struct {
 	EnablePublicSubPage           bool     `koanf:"enable_public_subscription_page"`
 	EnablePublicArchive           bool     `koanf:"enable_public_archive"`
 	EnablePublicArchiveRSSContent bool     `koanf:"enable_public_archive_rss_content"`
+	ShowOptinPage                 bool     `koanf:"show_optin_page"`
 	Lang                          string   `koanf:"lang"`
 	DBBatchSize                   int      `koanf:"batch_size"`
 	Privacy                       struct {
@@ -124,7 +126,7 @@ type Config struct {
 			} `koanf:"hcaptcha"`
 		} `koanf:"captcha"`
 
-		CorsOrigins []string `koanf:"cors_origins"`
+		TrustedURLs []string `koanf:"trusted_urls"`
 	} `koanf:"security"`
 
 	Appearance struct {
@@ -144,6 +146,7 @@ type Config struct {
 
 	BounceWebhooksEnabled     bool
 	BounceSESEnabled          bool
+	BounceAzureEnabled        bool
 	BounceSendgridEnabled     bool
 	BouncePostmarkEnabled     bool
 	BounceForwardemailEnabled bool
@@ -327,8 +330,34 @@ func initDB() *sqlx.DB {
 	}
 
 	lo.Printf("connecting to db: %s:%d/%s", c.Host, c.Port, c.DBName)
-	db, err := sqlx.Connect("postgres",
-		fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s %s", c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode, c.Params))
+
+	// Build Postgres DSN conditionally with non-empty fields.
+	fields := map[string]string{
+		"host":     c.Host,
+		"port":     strconv.Itoa(c.Port),
+		"user":     c.User,
+		"password": c.Password,
+		"dbname":   c.DBName,
+		"sslmode":  c.SSLMode,
+	}
+	if c.Port == 0 {
+		delete(fields, "port")
+	}
+
+	var parts []string
+	for k, v := range fields {
+		if v == "" {
+			continue
+		}
+
+		parts = append(parts, k+"="+v)
+	}
+
+	if c.Params != "" {
+		parts = append(parts, c.Params)
+	}
+
+	db, err := sqlx.Connect("postgres", strings.Join(parts, " "))
 	if err != nil {
 		lo.Fatalf("error connecting to DB: %v", err)
 	}
@@ -484,6 +513,7 @@ func initConstConfig(ko *koanf.Koanf) *Config {
 
 	c.BounceWebhooksEnabled = ko.Bool("bounce.webhooks_enabled")
 	c.BounceSESEnabled = ko.Bool("bounce.ses_enabled")
+	c.BounceAzureEnabled = ko.Bool("bounce.azure.enabled")
 	c.BounceSendgridEnabled = ko.Bool("bounce.sendgrid_enabled")
 	c.BouncePostmarkEnabled = ko.Bool("bounce.postmark.enabled")
 	c.BounceForwardemailEnabled = ko.Bool("bounce.forwardemail.enabled")
@@ -793,10 +823,13 @@ func initNotifs(fs stuffbin.FileSystem, i *i18n.I18n, em *email.Emailer, u *UrlC
 // for incoming bounce events.
 func initBounceManager(cb func(models.Bounce) error, stmt *sqlx.Stmt, lo *log.Logger, ko *koanf.Koanf) *bounce.Manager {
 	opt := bounce.Opt{
-		WebhooksEnabled: ko.Bool("bounce.webhooks_enabled"),
-		SESEnabled:      ko.Bool("bounce.ses_enabled"),
-		SendgridEnabled: ko.Bool("bounce.sendgrid_enabled"),
-		SendgridKey:     ko.String("bounce.sendgrid_key"),
+		WebhooksEnabled:         ko.Bool("bounce.webhooks_enabled"),
+		SESEnabled:              ko.Bool("bounce.ses_enabled"),
+		AzureEnabled:            ko.Bool("bounce.azure.enabled"),
+		AzureSharedSecret:       ko.String("bounce.azure.shared_secret"),
+		AzureSharedSecretHeader: ko.String("bounce.azure.shared_secret_header"),
+		SendgridEnabled:         ko.Bool("bounce.sendgrid_enabled"),
+		SendgridKey:             ko.String("bounce.sendgrid_key"),
 		Postmark: struct {
 			Enabled  bool
 			Username string
