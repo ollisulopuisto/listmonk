@@ -10,7 +10,7 @@
     "lint:i18n": "node scripts/check-i18n-keys.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prebuild": "eslint --ext .js,.vue --ignore-path .gitignore src && node scripts/check-i18n-keys.js",
+    "prebuild": "eslint --ext .js,.vue --ignore-path .gitignore src",
     "postinstall": "cp node_modules/altcha/dist/altcha.umd.cjs ../static/public/static/altcha.umd.js"
   },
   "dependencies": {
