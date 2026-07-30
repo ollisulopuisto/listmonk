@@ -26,6 +26,16 @@ function walk(dir, out = []) {
   return out;
 }
 
+// This reads i18n/en.json from the repo root, so it only works in a full
+// checkout. It is deliberately wired into `yarn lint` and not `prebuild`: the
+// Docker builder stage copies only frontend/ and static/, so running it during
+// `yarn build` breaks the image build.
+if (!fs.existsSync(EN)) {
+  console.error(`i18n: cannot find ${EN}.`);
+  console.error('This check needs a full repo checkout (it reads i18n/en.json at the repo root).');
+  process.exit(1);
+}
+
 const en = JSON.parse(fs.readFileSync(EN, 'utf8'));
 const missing = new Map();
 
