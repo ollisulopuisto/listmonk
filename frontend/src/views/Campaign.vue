@@ -33,13 +33,14 @@
               </b-button>
             </template>
 
-            <b-dropdown-item v-if="canStart" @click="startCampaign">
+            <b-dropdown-item v-if="canStart" @click="startCampaign" data-cy="btn-start">
               <b-icon icon="rocket-launch-outline" /> {{ $t('campaigns.start') }}
             </b-dropdown-item>
-            <b-dropdown-item v-if="canSchedule" @click="startCampaign">
+            <b-dropdown-item v-if="canSchedule" @click="startCampaign" data-cy="btn-schedule">
               <b-icon icon="clock-start" /> {{ $t('campaigns.schedule') }}
             </b-dropdown-item>
-            <b-dropdown-item v-if="canUnSchedule" @click="$utils.confirm(null, unscheduleCampaign)">
+            <b-dropdown-item v-if="canUnSchedule" @click="$utils.confirm(null, unscheduleCampaign)"
+              data-cy="btn-unschedule">
               <b-icon icon="clock-start" /> {{ $t('campaigns.unSchedule') }}
             </b-dropdown-item>
           </b-dropdown>

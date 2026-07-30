@@ -41,5 +41,14 @@ Tämä projekti noudattaa tiukkaa PR-pohjaista (Pull Request) kehitysmallia vika
  - **Manuaalinen konfliktointi:** Kun `upstream/master` mergetään, tarkista aina editoriin liittyvät tiedostot erikseen. Jos upstream tuo muutoksia editoriin, ratkaise konfliktit suosimalla paikallisia (ours) muutoksia editorin ydintoiminnallisuuden osalta.
  - **Cherry-pick -vaihtoehto:** Jos upstream-muutokset ovat massiivisia, harkitse vain kriittisten tietoturvakorjausten tai uusien ominaisuuksien cherry-pickaamista editoritiedostojen ulkopuolelta.
  - **Validointi:** Jokaisen synkronoinnin jälkeen varmista editorin toimivuus (sekä Tiptap että email-builder) ennen mergaamista main-haaraan.
+ - **Käytä oikeaa mergeä, älä squashia:** Aiemmat synkronoinnit tehtiin squash-mergenä, jolloin `git merge-base master upstream/master` jäi vanhaksi ja seuraava synkronointi näytti 83 committia jäljessä, vaikka sisältö oli jo pääosin mukana. Tämä tuotti kymmeniä turhia konflikteja. Mergeä `upstream/master` aidolla merge-commitilla, jotta merge-base pysyy ajan tasalla.
+
+8. Migraatioiden versiointi (kriittinen sudenkuoppa)
+ - Migraatio ajetaan vain jos sen versio on **suurempi** kuin tietokantaan tallennettu versio (`cmd/upgrade.go`, `semver.Compare`). Lista `migList` on oltava aidosti nouseva.
+ - Tämä forkki käyttää omia migraatioversioita (`v6.3.0`, `v6.4.0`, `v6.5.0`) upstreamin versioiden rinnalla. Siitä seuraa kaksi riskiä:
+   1. **Hiljaa ohittuva migraatio:** Jos upstream lisää uusia lauseita *vanhaan* migraatioon (esim. `v6.2.0`), ne eivät koskaan aja meidän kannassamme, koska kanta on jo versiossa `v6.4.0`. Tällöin lauseet on kopioitava uuteen forkki-migraatioon (näin tehtiin `v6.5.0`:ssa).
+   2. **Versiotörmäys:** Jos upstream julkaisee joskus oman `v6.3.0`:n, se törmää meidän omaamme. Tarkista tämä jokaisessa synkronoinnissa.
+ - **Tarkistus jokaisen synkronoinnin yhteydessä:** `git diff <edellinen-sync>..upstream/master -- internal/migrations/` — jos upstream on muokannut jo ajettua migraatiota, siirrä muutokset uuteen forkki-migraatioon.
+ - Huom: `cmd`-paketti ei voi sisältää testejä, koska `main.go`:n `init()` lopettaa prosessin ilman `config.toml`-tiedostoa. `migList`-järjestystä ei siksi voi yksikkötestata nykyisellään.
 
 Kun PR on tehty, käy tarkistamassa siihen tulleet kommentit ja implementoi niissä mainitut korjaukset tarpeen mukaan ennen mergeä.

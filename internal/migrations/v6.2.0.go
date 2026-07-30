@@ -9,27 +9,36 @@ import (
 )
 
 func V6_2_0(db *sqlx.DB, fs stuffbin.FileSystem, ko *koanf.Koanf, lo *log.Logger) error {
-	// From HEAD (our custom prefix):
+	// Fork-local: global fallback prefix for campaign subject lines.
 	if _, err := db.Exec(`
 		INSERT INTO settings (key, value, updated_at) VALUES ('app.campaign_subject_prefix', '""', NOW()) ON CONFLICT (key) DO NOTHING
 	`); err != nil {
 		return err
 	}
 
-	// From upstream/master:
-	// Add msg_retry_delay to each SMTP server entry in the smtp settings JSON array.
+	// Add `msg_retry_delay` and `from_addresses` to each SMTP server entry in the `smtp`
 	// Idempotent: only updates rows where at least one entry is missing the key.
 	if _, err := db.Exec(`
-		UPDATE settings SET value = s.updated
-		FROM (
+		UPDATE settings
+		SET value = (
 			SELECT JSONB_AGG(
-				CASE WHEN v ? 'msg_retry_delay' THEN v
-				     ELSE JSONB_SET(v, '{msg_retry_delay}', '"10ms"'::JSONB)
-				END
-			) AS updated FROM settings, JSONB_ARRAY_ELEMENTS(value) v WHERE key = 'smtp'
-		) s WHERE key = 'smtp'
+				JSONB_SET(
+					JSONB_SET(
+						v,
+						'{msg_retry_delay}',
+						COALESCE(v->'msg_retry_delay', '"10ms"'::JSONB)
+					),
+					'{from_addresses}',
+					COALESCE(v->'from_addresses', '[]'::JSONB)
+				)
+				ORDER BY ord
+			)
+			FROM JSONB_ARRAY_ELEMENTS(value) WITH ORDINALITY AS t(v, ord)
+		)
+		WHERE key = 'smtp'
 		AND EXISTS (
-			SELECT 1 FROM JSONB_ARRAY_ELEMENTS(value) v WHERE NOT (v ? 'msg_retry_delay')
+			SELECT 1 FROM JSONB_ARRAY_ELEMENTS(value) AS v
+			WHERE NOT (v ? 'msg_retry_delay') OR NOT (v ? 'from_addresses')
 		);
 	`); err != nil {
 		return err
@@ -48,7 +57,7 @@ func V6_2_0(db *sqlx.DB, fs stuffbin.FileSystem, ko *koanf.Koanf, lo *log.Logger
 		return err
 	}
 
-	// Add bounce.azure for ACS/Event Grid bounce handling; upsert if the row already exists.
+	// Add `bounce.azure` for ACS/Event Grid bounce handling; upsert if the row already exists.
 	if _, err := db.Exec(`
 		INSERT INTO settings (key, value) VALUES('bounce.azure', '{"enabled": false, "shared_secret": "", "shared_secret_header": ""}')
 		ON CONFLICT (key) DO UPDATE
@@ -65,8 +74,23 @@ func V6_2_0(db *sqlx.DB, fs stuffbin.FileSystem, ko *koanf.Koanf, lo *log.Logger
 		return err
 	}
 
-	// Rename security.cors_origins to security.trusted_urls.
-	if _, err := db.Exec(`UPDATE settings SET key = 'security.trusted_urls' WHERE key = 'security.cors_origins'`); err != nil {
+	// Rename `security.cors_origins` to `security.trusted_urls`.
+	if _, err := db.Exec(`UPDATE settings SET key = 'security.trusted_urls'
+		WHERE key = 'security.cors_origins'
+		AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'security.trusted_urls')`); err != nil {
+		return err
+	}
+
+	// Hash existing API tokens. This is idempotent by skipping values that
+	// already look like lowercase SHA-256 hex digests.
+	if _, err := db.Exec(`
+		UPDATE users
+		SET password = ENCODE(DIGEST(password, 'sha256'), 'hex')
+		WHERE type = 'api'
+			AND password IS NOT NULL
+			AND password != ''
+			AND password !~ '^[a-f0-9]{64}$';
+	`); err != nil {
 		return err
 	}
 
