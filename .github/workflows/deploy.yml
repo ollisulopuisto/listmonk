@@ -26,9 +26,42 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+  # 1b. FRONTEND TEST GATE: unit tests, eslint, and the i18n key check.
+  #
+  # Cypress is deliberately NOT run here. The e2e specs inherited from upstream
+  # drive TinyMCE directly (win.tinymce.editors[0], .tox-dialog selectors), and
+  # this fork replaced TinyMCE with Tiptap, so those specs cannot pass as-is.
+  # Wiring them in would mean a permanently red gate. They need porting to
+  # Tiptap first.
+  frontend-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # jsdom requires ^22.22.2 || ^24.15.0 || >=26; 24 sits safely inside.
+          node-version: '24'
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint (eslint + i18n keys)
+        run: yarn lint
+
+      - name: Run unit tests
+        run: yarn test
+
   # 2. BUILD GATE: Image must build successfully before deploying
   build-and-push:
-    needs: test
+    needs: [test, frontend-test]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
