@@ -454,41 +454,49 @@ describe('Campaign image embed', () => {
     });
   };
 
-  // Open the image dialog's media picker and upload/select image.
+  // Open the richtext editor's media picker and upload/select the image.
+  //
+  // Ported from upstream's TinyMCE flow (image dialog -> browse -> URL field).
+  // This fork uses Tiptap, whose toolbar image button opens the media modal
+  // directly and inserts the selection straight into the document, so there is
+  // no intermediate dialog or URL field to assert on.
   const pickLogo = (upload) => {
-    cy.window().then((win) => win.tinymce.editors[0].execCommand('mceImage'));
-    cy.get('.tox-dialog .tox-browse-url').click();
+    cy.get('[data-cy=btn-insert-image]').click();
     if (upload) {
       cy.get('[data-cy=btn-toggle-upload]').click();
       cy.get('input[type=file]').attachFile('logo.png');
       cy.get('form[data-cy="upload"] button').click();
     }
     cy.get('.modal a.thumb-link', { timeout: 10000 }).first().click();
-    cy.get('.tox-dialog input[type=url]').should('have.value', logoUrl);
+    cy.get('.tiptap-editor img', { timeout: 10000 }).should('have.attr', 'src', logoUrl);
   };
 
   const richtext = (name, embed, upload) => {
     let id;
     newCampaign(name, 'richtext').then((cid) => { id = cid; });
-    cy.window().its('tinymce.editors.0').should('exist');
+    cy.get('.tiptap-editor').should('exist');
     pickLogo(upload);
+
     if (embed) {
-      cy.get('.tox-dialog input[type=checkbox]').check({ force: true });
+      // Select the image (NodeSelection) so the embed toggle becomes enabled.
+      cy.get('.tiptap-editor img').click();
+      cy.get('[data-cy=btn-embed-image]').should('not.be.disabled').click();
+      cy.get('.tiptap-editor img').should('have.attr', 'data-embed', 'true');
     }
-    cy.get('.tox-dialog__footer button').last().click();
+
     cy.get('button[data-cy=btn-save]').click();
     cy.wait(500);
 
     // The 'embed?' selection is stored on the <img data-embed> and must persist across reloads.
+    // Asserting the attribute directly checks the exact thing the backend keys
+    // off (internal/manager: applyInlineImages) rather than a dialog checkbox.
     cy.then(() => cy.visit(`/admin/campaigns/${id}#content`));
-    cy.window().its('tinymce.editors.0').should('exist');
-    cy.window().then((win) => {
-      const ed = win.tinymce.editors[0];
-      ed.selection.select(ed.getBody().querySelector('img'));
-      ed.execCommand('mceImage');
-    });
-    cy.get('.tox-dialog input[type=checkbox]').should(embed ? 'be.checked' : 'not.be.checked');
-    cy.get('.tox-dialog__footer button').first().click();
+    cy.get('.tiptap-editor img', { timeout: 10000 }).should('exist');
+    if (embed) {
+      cy.get('.tiptap-editor img').should('have.attr', 'data-embed', 'true');
+    } else {
+      cy.get('.tiptap-editor img').should('not.have.attr', 'data-embed');
+    }
 
     cy.then(() => send(id, name, embed));
   };

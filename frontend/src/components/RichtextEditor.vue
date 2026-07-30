@@ -54,7 +54,7 @@
         <b-button size="is-small" @click="setLink" :type="editor.isActive('link') ? 'is-primary' : ''">
           <span class="material-symbols-outlined">link</span>
         </b-button>
-        <b-button size="is-small" @click="isMediaVisible = true">
+        <b-button size="is-small" @click="isMediaVisible = true" data-cy="btn-insert-image">
           <span class="material-symbols-outlined">image</span>
         </b-button>
         <b-button size="is-small" @click="toggleEmbedImage" :disabled="!editor.isActive('image')"
