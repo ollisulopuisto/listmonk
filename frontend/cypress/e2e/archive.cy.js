@@ -25,11 +25,11 @@ describe('Archive', () => {
 
   it('Starts campaigns', () => {
     cy.get('td[data-label=Status] a').eq(0).click();
-    cy.get('[data-cy=btn-start]').click();
+    cy.campaignAction('start');
     cy.get('.modal button.is-primary').click();
 
     cy.get('td[data-label=Status] a').eq(1).click();
-    cy.get('[data-cy=btn-start]').click();
+    cy.campaignAction('start');
     cy.get('.modal button.is-primary').click();
     cy.wait(1000);
   });

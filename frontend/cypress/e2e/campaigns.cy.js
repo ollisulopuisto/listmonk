@@ -52,7 +52,7 @@ describe('Campaigns', () => {
     cy.get('div.field[data-cy=media]').contains('example');
 
     // Start.
-    cy.get('button[data-cy=btn-start]').click();
+    cy.campaignAction('start');
     cy.get('.modal button.is-primary:eq(0)').click();
     cy.wait('@putCampaign');
     cy.get('tbody tr').eq(0).within(() => {
@@ -102,7 +102,7 @@ describe('Campaigns', () => {
     cy.wait('@putCampaign');
 
     // Schedule.
-    cy.get('button[data-cy=btn-schedule]').click();
+    cy.campaignAction('schedule');
     cy.get('.modal button.is-primary:eq(0)').click();
     cy.wait('@putCampaign');
 
@@ -129,7 +129,7 @@ describe('Campaigns', () => {
 
   it('Unschedules campaign', () => {
     cy.get('td[data-label=Status] a').eq(1).click();
-    cy.get('button[data-cy=btn-unschedule]').should('be.visible').click();
+    cy.campaignAction('unschedule');
     cy.get('.modal button.is-primary:eq(0)').click();
     cy.wait('@putCampaign');
     cy.visit('/admin/campaigns');
