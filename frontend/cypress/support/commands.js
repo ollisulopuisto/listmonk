@@ -72,6 +72,18 @@ Cypress.Commands.add('waitForBackend', () => {
   );
 });
 
+// Triggers a campaign action (start / schedule / unschedule) from the campaign
+// editor page.
+//
+// This fork groups those actions into a dropdown instead of rendering them as
+// three separate top-level buttons, so the items are only in the DOM once the
+// dropdown is open, and they render as <a class="dropdown-item"> rather than
+// <button>. Going through this command keeps the specs independent of that.
+Cypress.Commands.add('campaignAction', (action) => {
+  cy.get('[data-cy=btn-campaign-actions]').click();
+  cy.get(`[data-cy=btn-${action}]`).should('be.visible').click();
+});
+
 Cypress.on('uncaught:exception', (err, runnable) => {
   if (err.hasOwnProperty('request')) {
     return false;

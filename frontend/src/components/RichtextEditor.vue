@@ -57,6 +57,11 @@
         <b-button size="is-small" @click="isMediaVisible = true">
           <span class="material-symbols-outlined">image</span>
         </b-button>
+        <b-button size="is-small" @click="toggleEmbedImage" :disabled="!editor.isActive('image')"
+          :type="editor.getAttributes('image').dataEmbed ? 'is-primary' : ''" :title="$t('media.embed')"
+          data-cy="btn-embed-image">
+          <span class="material-symbols-outlined">attach_email</span>
+        </b-button>
 
         <div class="is-divider-vertical mx-1" />
 
@@ -143,7 +148,6 @@
 import { Editor, EditorContent } from '@tiptap/vue-2';
 import StarterKit from '@tiptap/starter-kit';
 import { Link } from '@tiptap/extension-link';
-import { Image } from '@tiptap/extension-image';
 import {
   Table, TableRow, TableCell, TableHeader,
 } from '@tiptap/extension-table';
@@ -151,6 +155,7 @@ import { html as beautifyHTML } from 'js-beautify';
 
 import CodeEditor from './CodeEditor.vue';
 import Media from '../views/Media.vue';
+import { EmbeddableImage } from './extensions/embeddableImage';
 
 export default {
   components: {
@@ -203,7 +208,7 @@ export default {
             class: 'richtext-link',
           },
         }),
-        Image.configure({
+        EmbeddableImage.configure({
           HTMLAttributes: {
             class: 'richtext-image',
           },
@@ -253,6 +258,14 @@ export default {
     onMediaSelect(media) {
       this.editor.chain().focus().setImage({ src: media.url, alt: media.filename }).run();
       this.isMediaVisible = false;
+    },
+
+    // Toggle `data-embed` on the selected image, which makes the backend attach
+    // it as an inline CID part instead of linking to it remotely.
+    toggleEmbedImage() {
+      const isEmbedded = Boolean(this.editor.getAttributes('image').dataEmbed);
+      this.editor.chain().focus().updateAttributes('image', { dataEmbed: isEmbedded ? null : 'true' })
+        .run();
     },
 
     onRichtextViewSource() {

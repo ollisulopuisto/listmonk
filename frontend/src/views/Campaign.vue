@@ -28,7 +28,7 @@
           <b-dropdown v-if="isEditing && canSend && (canStart || canSchedule || canUnSchedule)" position="is-bottom-left"
             append-to-body>
             <template #trigger>
-              <b-button type="is-primary" icon-right="chevron-down">
+              <b-button type="is-primary" icon-right="chevron-down" data-cy="btn-campaign-actions">
                 {{ $t('globals.buttons.actions') }}
               </b-button>
             </template>
