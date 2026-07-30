@@ -19,7 +19,17 @@ Tämä projekti noudattaa tiukkaa PR-pohjaista (Pull Request) kehitysmallia vika
 4. Pull Request (PR) ja Itsekatselmointi
  - PR-vaihe on kriittinen "viimeinen tarkistus" ennen koodin päätymistä staging-jonoon.
  - Status Checkit: CI:n (GitHub Actions) on mentävä läpi PR-haarassa ennen mergeä.
- - Squash Merge: Suosi "Squash and merge" -toimintoa, jotta main-haaran historia pysyy siistinä ja jokainen PR näkyy yhtenä kokonaisuutena.
+ - Squash Merge: Suosi "Squash and merge" -toimintoa, jotta main-haaran historia pysyy siistinä ja jokainen PR näkyy yhtenä kokonaisuutena. **Poikkeus:** upstream-synkronoinnit mergetään aidolla merge-commitilla, ei squashilla (ks. kohta 7).
+
+ - **PR:t avataan AINA omaan forkkiin (`ollisulopuisto/listmonk`), EI koskaan upstreamiin (`knadh/listmonk`).**
+   - Tämä on yksityinen forkki, jossa on tarkoituksellisia eroja upstreamiin (Tiptap-editori, emailmd, CalVer, RSS-skriptit). Näitä ei ole tarkoitettu upstreamin katselmoitavaksi, eikä niitä pidä tarjota sinne.
+   - `gh pr create` **valitsee oletuksena parent-repon** (`knadh/listmonk`), kun ollaan forkatussa repossa. Pelkkä `--base master` EI riitä — se tulkitaan upstreamin masteriksi.
+   - Käytä siksi aina eksplisiittistä repoa:
+     ```
+     gh pr create --repo ollisulopuisto/listmonk --base master --head <haara> ...
+     ```
+   - Tarkista avaamisen jälkeen, että URL osoittaa `ollisulopuisto/listmonk`-repoon. Jos PR meni vahingossa upstreamiin, sulje se välittömästi (`gh pr close <n> --repo knadh/listmonk`) ja avaa uudelleen oikeaan repoon.
+   - Sama koskee muitakin ulospäin näkyviä toimia: issueita, kommentteja ja `gh`-komentoja ei kohdisteta upstreamiin ilman erillistä pyyntöä.
 
 5. Vikasietoisuuden tavoite
  - Main-eheys: main-haaran on oltava aina julkaisukelpoinen. Jos CI epäonnistuu PR-haarassa, main ei saastu.
