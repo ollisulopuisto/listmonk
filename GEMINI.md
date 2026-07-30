@@ -2,6 +2,8 @@ Workflow: PR-Based Development & Safety
 
 Tämä projekti noudattaa tiukkaa PR-pohjaista (Pull Request) kehitysmallia vikasietoisuuden ja koodin laadun varmistamiseksi, vaikka kehittäjiä on vain yksi.
 
+> **Huom:** Tämä tiedosto on ohjeiden ainoa auktoriteetti. Repossa on lisäksi `CLAUDE.md`, koska Claude Code lataa automaattisesti vain `CLAUDE.md`:n — se toistaa tiivistettynä kohdat 4 (PR:t omaan forkkiin), 6 (editorin koskemattomuus) ja 8 (migraatioversiot). **Jos muutat noita kohtia, päivitä myös `CLAUDE.md`.** Ristiriitatilanteessa tämä tiedosto voittaa.
+
 1. Haaroitus (Branching)
  - Kielto: Älä koskaan tee muutoksia tai committeja suoraan main-haaraan.
  - Käytäntö: Luo jokaiselle tehtävälle (feature, bug fix, refactor) uusi haara main-haarasta käsin.
