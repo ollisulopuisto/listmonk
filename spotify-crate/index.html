@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crate — search your monthly playlists</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗃️</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">🗃️</span>
+    <div>
+      <h1>Crate</h1>
+      <p class="brand-sub" id="brandSub">your monthly playlists, as one library</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button id="btnPlaylists" class="btn" hidden>Playlists</button>
+    <button id="btnSync" class="btn" hidden>Sync</button>
+    <button id="btnSignOut" class="btn btn-quiet" hidden>Sign out</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<!-- Setup / sign-in -->
+<section id="setup" class="setup" hidden>
+  <h2>One-time setup</h2>
+  <p class="muted">
+    Crate talks to Spotify directly from this browser tab. There is no server and
+    nothing is uploaded anywhere — your playlists are cached in this browser only.
+    To let it in, Spotify needs you to register a (free) app and paste its ID here.
+  </p>
+  <ol class="steps">
+    <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">Spotify developer dashboard</a> and click <b>Create app</b>. Any name will do.</li>
+    <li>
+      Set the <b>Redirect URI</b> to exactly this, and click <b>Add</b>:
+      <div class="copyrow">
+        <code id="redirectUri"></code>
+        <button id="btnCopyRedirect" class="btn btn-small">Copy</button>
+      </div>
+      <span class="hint" id="redirectHint"></span>
+    </li>
+    <li>Under <b>Which API/SDKs are you planning to use?</b> tick <b>Web API</b>, then save.</li>
+    <li>Open the app's <b>Settings</b>, copy the <b>Client ID</b>, and paste it here:</li>
+  </ol>
+  <div class="copyrow">
+    <input id="clientId" type="text" spellcheck="false" autocomplete="off"
+           placeholder="Client ID (32 hex characters)">
+    <button id="btnSignIn" class="btn btn-primary">Sign in with Spotify</button>
+  </div>
+</section>
+
+<!-- Main app -->
+<main id="app" hidden>
+
+  <div class="searchbar">
+    <input id="q" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Search your crate…  (try:  artist:autechre    year:1998    &quot;kid a&quot;)">
+    <button id="btnClear" class="clear" title="Clear (Esc)" hidden>&times;</button>
+  </div>
+
+  <div class="controls">
+    <div class="segmented" role="tablist">
+      <button class="seg is-active" data-view="albums" role="tab">Albums</button>
+      <button class="seg" data-view="tracks" role="tab">Tracks</button>
+    </div>
+
+    <label class="ctl">Sort
+      <select id="sort"></select>
+    </label>
+
+    <label class="ctl">Released
+      <input id="yearFrom" class="year" type="number" inputmode="numeric" placeholder="from">
+      <span class="dash">–</span>
+      <input id="yearTo" class="year" type="number" inputmode="numeric" placeholder="to">
+    </label>
+
+    <label class="ctl">Filed
+      <input id="addedFrom" class="year" type="number" inputmode="numeric" placeholder="from">
+      <span class="dash">–</span>
+      <input id="addedTo" class="year" type="number" inputmode="numeric" placeholder="to">
+    </label>
+
+    <button id="btnShuffle" class="btn btn-small" title="Reroll the shuffle">Surprise me</button>
+    <button id="btnReset" class="btn btn-small btn-quiet">Reset</button>
+  </div>
+
+  <div id="activeFilters" class="chips" hidden></div>
+
+  <div class="resultbar">
+    <span id="count" class="count"></span>
+    <div class="resultbar-actions">
+      <span id="selectionInfo" class="muted" hidden></span>
+      <button id="btnSelectAll" class="btn btn-small btn-quiet" hidden>Select all shown</button>
+      <button id="btnClearSel" class="btn btn-small btn-quiet" hidden>Clear selection</button>
+      <button id="btnExport" class="btn btn-small btn-primary" hidden>Save as Spotify playlist</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <aside class="facets">
+      <div id="facetArtists" class="facet"></div>
+      <div id="facetDecades" class="facet"></div>
+      <div class="facet syntax">
+        <h3>Search syntax</h3>
+        <ul>
+          <li><code>artist:</code> <code>album:</code> <code>track:</code></li>
+          <li><code>playlist:</code> the month's name</li>
+          <li><code>year:1998</code></li>
+          <li><code>year:1990-1999</code></li>
+          <li><code>"exact phrase"</code></li>
+          <li><code>artist:"two words"</code></li>
+        </ul>
+        <p class="muted">Terms combine with AND.</p>
+      </div>
+    </aside>
+
+    <section id="results" class="results"></section>
+  </div>
+
+  <div id="sentinel"></div>
+</main>
+
+<!-- Playlist picker -->
+<div id="pickerBackdrop" class="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+    <header class="modal-head">
+      <h2 id="pickerTitle">Which playlists make up your crate?</h2>
+      <button id="btnPickerClose" class="btn btn-quiet btn-small">Close</button>
+    </header>
+    <p class="muted">
+      Tick the monthly playlists you want to search. Everything else on your
+      account is ignored. You can change this at any time.
+    </p>
+    <div class="copyrow">
+      <input id="pickerFilter" type="search" placeholder="Filter by name… (e.g. 2019, or &quot;kuunkuuntelut&quot;)">
+      <button id="btnPickMatching" class="btn btn-small">Select matching</button>
+      <button id="btnUnpickMatching" class="btn btn-small btn-quiet">Deselect matching</button>
+    </div>
+    <div id="pickerList" class="picker-list"></div>
+    <footer class="modal-foot">
+      <span id="pickerCount" class="muted"></span>
+      <button id="btnPickerSave" class="btn btn-primary">Save and sync</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Progress overlay -->
+<div id="progressBackdrop" class="backdrop" hidden>
+  <div class="modal modal-narrow">
+    <h2 id="progressTitle">Syncing</h2>
+    <p id="progressText" class="muted"></p>
+    <div class="progress"><div id="progressBar" class="progress-fill"></div></div>
+    <footer class="modal-foot">
+      <span></span>
+      <button id="btnCancelSync" class="btn btn-quiet btn-small">Cancel</button>
+    </footer>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

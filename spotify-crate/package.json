@@ -1,0 +1,16 @@
+{
+  "name": "spotify-crate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Search your monthly Spotify playlists as one library",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8765 --bind 127.0.0.1",
+    "test": "node --test tests/library.test.mjs",
+    "test:ui": "node --test tests/ui.test.mjs",
+    "test:all": "npm test && npm run test:ui"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
