@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.08.21.2137] - 2026-08-21
+
+### Added
+- Automated daily upstream sync workflow (`.github/workflows/upstream-sync.yml`) that pulls in changes from `knadh/listmonk:master`, validates integrity (Tiptap editor preservation, Go tests, frontend lint/tests/build), merges cleanly into `master`, or creates a resolution PR in `ollisulopuisto/listmonk` if conflicts or check failures occur.
+
 ## [v26.04.08.2031] - 2026-04-08
 
 ### Added

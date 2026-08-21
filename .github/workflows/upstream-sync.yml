@@ -1,0 +1,136 @@
+name: Daily Upstream Sync
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync Upstream Master
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          ref: master
+          token: ${{ secrets.GHCR_PAT || github.token }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.3.0
+        with:
+          go-version: '1.26.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Fetch upstream master
+        run: |
+          git remote add upstream https://github.com/knadh/listmonk.git || git remote set-url upstream https://github.com/knadh/listmonk.git
+          git fetch upstream master
+
+      - name: Check for upstream changes
+        id: check_upstream
+        run: |
+          NEW_COMMITS=$(git rev-list HEAD..upstream/master --count)
+          echo "New upstream commits: $NEW_COMMITS"
+          echo "new_commits=$NEW_COMMITS" >> $GITHUB_OUTPUT
+          if [ "$NEW_COMMITS" -eq 0 ]; then
+            echo "Master is already up to date with upstream/master."
+          fi
+
+      - name: Sync and validate upstream changes
+        if: steps.check_upstream.outputs.new_commits != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE_TAG=$(date +'%Y-%m-%d')
+          BRANCH_TAG=$(date +'%Y%m%d-%H%M%S')
+          SYNC_BRANCH="sync/upstream-$BRANCH_TAG"
+
+          echo "Attempting real merge of upstream/master into master..."
+
+          # Attempt merge
+          if ! git merge upstream/master --no-edit -m "Merge upstream/master ($DATE_TAG) — sync upstream changes"; then
+            echo "::error::Merge conflict encountered when merging upstream/master."
+            git merge --abort || true
+
+            # Create branch from upstream/master for manual resolution PR
+            git checkout -b "$SYNC_BRANCH" upstream/master
+            git push origin "$SYNC_BRANCH"
+
+            gh pr create --repo ollisulopuisto/listmonk \
+              --base master \
+              --head "$SYNC_BRANCH" \
+              --title "sync: upstream/master merge conflict ($DATE_TAG)" \
+              --body "Automated daily upstream sync encountered merge conflicts when trying to merge \`upstream/master\` into \`master\`. Please resolve conflicts manually following the editor integrity and migration guidelines in GEMINI.md."
+
+            exit 1
+          fi
+
+          echo "Merge completed cleanly. Running integrity checks..."
+
+          # Check for TinyMCE re-introduction
+          if grep -rn "tinymce" frontend/src/; then
+            echo "::error::TinyMCE detected in frontend/src after upstream merge!"
+            git checkout -b "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
+
+            gh pr create --repo ollisulopuisto/listmonk \
+              --base master \
+              --head "$SYNC_BRANCH" \
+              --title "sync: TinyMCE detected in upstream changes ($DATE_TAG)" \
+              --body "Upstream changes reintroduced TinyMCE into \`frontend/src\`. Manual review required to preserve Tiptap editor integrity."
+
+            exit 1
+          fi
+
+          echo "Running Go tests..."
+          if ! go test ./...; then
+            echo "::error::Go tests failed after merging upstream/master."
+            git checkout -b "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
+
+            gh pr create --repo ollisulopuisto/listmonk \
+              --base master \
+              --head "$SYNC_BRANCH" \
+              --title "sync: Go test failure after upstream merge ($DATE_TAG)" \
+              --body "Go tests failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
+
+            exit 1
+          fi
+
+          echo "Running frontend dependencies, lint, and tests..."
+          if ! (cd frontend && yarn install --frozen-lockfile && yarn lint && yarn test && yarn build); then
+            echo "::error::Frontend checks/build failed after merging upstream/master."
+            git checkout -b "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
+
+            gh pr create --repo ollisulopuisto/listmonk \
+              --base master \
+              --head "$SYNC_BRANCH" \
+              --title "sync: Frontend check/build failure after upstream merge ($DATE_TAG)" \
+              --body "Frontend lint, test, or build failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
+
+            exit 1
+          fi
+
+          echo "All checks passed! Pushing merged master to origin..."
+          git push origin master
