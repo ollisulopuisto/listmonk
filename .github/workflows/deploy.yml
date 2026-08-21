@@ -71,6 +71,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+    outputs:
+      version: ${{ steps.calver.outputs.version }}
+      sha_short: ${{ steps.slug.outputs.sha_short }}
 
     steps:
       - name: Checkout code
@@ -133,7 +136,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            /opt/stacks/scripts/deploy.sh listmonk deploy ${{ steps.calver.outputs.version }}
+            /opt/stacks/scripts/deploy.sh listmonk deploy ${{ needs.build-and-push.outputs.version }}
 
   deploy-prod:
     needs: build-and-push
