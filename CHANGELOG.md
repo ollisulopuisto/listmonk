@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.08.21.2138] - 2026-08-21
+
+### Fixed
+- Staging deployment workflow (`.github/workflows/deploy.yml`): Corrected version parameter passing to remote deploy script by properly declaring job outputs in `build-and-push` and referencing `needs.build-and-push.outputs.version` in `deploy-staging`.
+
 ## [v26.08.21.2137] - 2026-08-21
 
 ### Added
