@@ -83,5 +83,9 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 
 EXPOSE 9000
+
+# What this build contains; the ops dashboard shows it on the version.
+COPY CHANGELOG.md /app/CHANGELOG.md
+
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["sh", "-c", "./listmonk --install --idempotent --yes && ./listmonk --upgrade --yes && ./listmonk"]

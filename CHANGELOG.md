@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.09.28.2153] - 2026-09-28
+
+### Added
+- **The image carries this CHANGELOG** (`/app/CHANGELOG.md`). The ops dashboard reads it from the running container and shows a version's entries when you hover it, and what promoting the standby would ship.
+
 ## [v26.08.21.2138] - 2026-08-21
 
 ### Fixed
