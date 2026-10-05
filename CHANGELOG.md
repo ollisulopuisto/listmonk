@@ -5,11 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
-## [v26.10.05.2160] - 2026-10-05
+## [v26.10.05.2164] - 2026-10-05
 
 ### Fixed
-- Upstream sync: Resolved merge conflict in `internal/notifs/notifs.go` with upstream alternate plain text support (`AltBody`) and preserved fork's `utils.GetTplSubject`.
-- CI/CD (`.github/workflows/upstream-sync.yml`): Added `workflows: write` permission and configured fallback sync branches to push using `GITHUB_TOKEN` to avoid Personal Access Token workflow scope rejections.
+- Upstream sync: Resolved merge conflict in `internal/notifs/notifs.go` by adopting upstream's plain text alternate body (`AltBody`) and maintaining fork's `utils.GetTplSubject`.
+- CI/CD (`.github/workflows/upstream-sync.yml`): Fixed workflow syntax and permissions.
 
 ## [v26.09.28.2153] - 2026-09-28
 
