@@ -11,7 +11,6 @@ env:
 permissions:
   contents: write
   pull-requests: write
-  workflows: write
 
 jobs:
   sync:
@@ -75,7 +74,7 @@ jobs:
 
             # Create branch from upstream/master for manual resolution PR
             git checkout -b "$SYNC_BRANCH" upstream/master
-            git -c http.extraheader= push https://x-access-token:${GH_TOKEN}@github.com/ollisulopuisto/listmonk.git "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
               --base master \
@@ -92,7 +91,7 @@ jobs:
           if grep -rn "tinymce" frontend/src/; then
             echo "::error::TinyMCE detected in frontend/src after upstream merge!"
             git checkout -b "$SYNC_BRANCH"
-            git -c http.extraheader= push https://x-access-token:${GH_TOKEN}@github.com/ollisulopuisto/listmonk.git "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
               --base master \
@@ -107,7 +106,7 @@ jobs:
           if ! go test ./...; then
             echo "::error::Go tests failed after merging upstream/master."
             git checkout -b "$SYNC_BRANCH"
-            git -c http.extraheader= push https://x-access-token:${GH_TOKEN}@github.com/ollisulopuisto/listmonk.git "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
               --base master \
@@ -122,7 +121,7 @@ jobs:
           if ! (cd frontend && yarn install --frozen-lockfile && yarn lint && yarn test && yarn build); then
             echo "::error::Frontend checks/build failed after merging upstream/master."
             git checkout -b "$SYNC_BRANCH"
-            git -c http.extraheader= push https://x-access-token:${GH_TOKEN}@github.com/ollisulopuisto/listmonk.git "$SYNC_BRANCH"
+            git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
               --base master \
