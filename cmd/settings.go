@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"runtime"
@@ -13,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/gdgvda/cron"
 	"github.com/gofrs/uuid/v5"
 	"github.com/jmoiron/sqlx/types"
 	koanfjson "github.com/knadh/koanf/parsers/json"
@@ -23,7 +24,7 @@ import (
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const pwdMask = "•"
@@ -55,13 +56,20 @@ var (
 )
 
 // GetSettings returns settings from the DB.
-func (a *App) GetSettings(c echo.Context) error {
+func (a *App) GetSettings(c *echo.Context) error {
 	s, err := a.core.GetSettings()
 	if err != nil {
 		return err
 	}
 
-	// Empty out passwords.
+	maskSettings(&s)
+
+	return c.JSON(http.StatusOK, okResp{s})
+}
+
+// maskSettings replaces sensitive values (passwords, secrets, keys) in the
+// settings with masked placeholders of the same length.
+func maskSettings(s *models.Settings) {
 	for i := range s.SMTP {
 		s.SMTP[i].Password = strings.Repeat(pwdMask, utf8.RuneCountInString(s.SMTP[i].Password))
 	}
@@ -80,17 +88,77 @@ func (a *App) GetSettings(c echo.Context) error {
 	s.BounceLettermint.Key = strings.Repeat(pwdMask, utf8.RuneCountInString(s.BounceLettermint.Key))
 	s.SecurityCaptcha.HCaptcha.Secret = strings.Repeat(pwdMask, utf8.RuneCountInString(s.SecurityCaptcha.HCaptcha.Secret))
 	s.OIDC.ClientSecret = strings.Repeat(pwdMask, utf8.RuneCountInString(s.OIDC.ClientSecret))
+}
 
-	return c.JSON(http.StatusOK, okResp{s})
+// roleOption is a minimal role representation for the settings OIDC role dropdowns.
+type roleOption struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// settingsView is the admin page view for the settings form.
+type settingsView struct {
+	adminView
+
+	Settings  models.Settings
+	UserRoles []roleOption
+	ListRoles []roleOption
+	Version   string
+}
+
+// ViewSettings renders the HTML view for the settings form.
+func (a *App) ViewSettings(c *echo.Context) error {
+	s, err := a.core.GetSettings()
+	if err != nil {
+		return err
+	}
+	maskSettings(&s)
+
+	// Roles for the OIDC default-role dropdowns (security tab).
+	var userRoles, listRoles []roleOption
+	if can(auth.GetUser(c), auth.PermRolesGet) {
+		ur, err := a.core.GetRoles("", "", "")
+		if err != nil {
+			return err
+		}
+		for _, r := range ur {
+			userRoles = append(userRoles, roleOption{ID: r.ID, Name: r.Name.String})
+		}
+
+		lr, err := a.core.GetListRoles("", "", "")
+		if err != nil {
+			return err
+		}
+		for _, r := range lr {
+			listRoles = append(listRoles, roleOption{ID: r.ID, Name: r.Name.String})
+		}
+	}
+
+	data := settingsView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.settings"), "", "settings.all"),
+		Settings:  s,
+		UserRoles: userRoles,
+		ListRoles: listRoles,
+		Version:   versionString,
+	}
+
+	return c.Render(http.StatusOK, "admin-settings", data)
 }
 
 // UpdateSettings returns settings from the DB.
-func (a *App) UpdateSettings(c echo.Context) error {
+func (a *App) UpdateSettings(c *echo.Context) error {
 	// Unmarshal and marshal the fields once to sanitize the settings blob.
 	var set models.Settings
 	if err := c.Bind(&set); err != nil {
 		return err
 	}
+
+	// Sanitize `from` addresses.
+	addr, err := sanitizeFromAddresses(set.AppFromEmail)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	set.AppFromEmail = addr
 
 	// Get the existing settings.
 	cur, err := a.core.GetSettings()
@@ -98,15 +166,21 @@ func (a *App) UpdateSettings(c echo.Context) error {
 		return err
 	}
 
+	// Preserve the OIDC role mapping when older clients do not send the field.
+	// An explicit empty array still clears the mapping.
+	if set.OIDC.Roles == nil {
+		set.OIDC.Roles = cur.OIDC.Roles
+	}
+
 	// Validate and sanitize postback Messenger names along with SMTP names
 	// (where each SMTP is also considered as a standalone messenger).
 	// Duplicates are disallowed and "email" is a reserved name.
-	names := map[string]bool{emailMsgr: true}
+	names := map[string]bool{email.MessengerName: true}
 
-	// There should be at least one SMTP block that's enabled.
+	// There should be at least one enabled SMTP server for the default messenger.
 	has := false
 	for i, s := range set.SMTP {
-		if s.Enabled {
+		if s.Enabled && !s.ExcludeFromDefault {
 			has = true
 		}
 
@@ -123,6 +197,9 @@ func (a *App) UpdateSettings(c echo.Context) error {
 			}
 
 			names[name] = true
+		}
+		if s.ExcludeFromDefault && name == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("settings.smtp.excludeFromDefaultNameRequired"))
 		}
 		set.SMTP[i].Name = name
 
@@ -149,7 +226,7 @@ func (a *App) UpdateSettings(c echo.Context) error {
 		}
 	}
 	if !has {
-		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("settings.errorNoSMTP"))
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("settings.smtp.defaultRequired"))
 	}
 
 	// Normalize `from_addresses``. Values are either an e-mail address
@@ -254,12 +331,8 @@ func (a *App) UpdateSettings(c echo.Context) error {
 		set.OIDC.ClientSecret = cur.OIDC.ClientSecret
 	}
 
-	// OIDC user auto-creation is enabled. Validate.
-	if set.OIDC.AutoCreateUsers {
-		if set.OIDC.DefaultUserRoleID.Int < auth.SuperAdminRoleID {
-			return echo.NewHTTPError(http.StatusBadRequest,
-				a.i18n.Ts("globals.messages.invalidFields", "name", a.i18n.T("settings.security.OIDCDefaultRole")))
-		}
+	if err := a.validateOIDCSettings(set); err != nil {
+		return err
 	}
 
 	for n, v := range set.UploadExtensions {
@@ -305,7 +378,7 @@ func (a *App) UpdateSettings(c echo.Context) error {
 
 	// Validate slow query caching cron.
 	if set.CacheSlowQueries {
-		if _, err := cron.ParseStandard(set.CacheSlowQueriesInterval); err != nil {
+		if _, err := parseCronString(set.CacheSlowQueriesInterval); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidData")+": slow query cron: "+err.Error())
 		}
 	}
@@ -319,7 +392,7 @@ func (a *App) UpdateSettings(c echo.Context) error {
 }
 
 // UpdateSettingsByKey updates a single setting key-value in the DB.
-func (a *App) UpdateSettingsByKey(c echo.Context) error {
+func (a *App) UpdateSettingsByKey(c *echo.Context) error {
 	key := c.Param("key")
 	if key == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
@@ -331,6 +404,18 @@ func (a *App) UpdateSettingsByKey(c echo.Context) error {
 		return err
 	}
 
+	// Validate OIDC defaults and mappings on both settings endpoints.
+	if key == "security.oidc" {
+		var set models.Settings
+		if err := json.Unmarshal(b, &set.OIDC); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
+		}
+
+		if err := a.validateOIDCSettings(set); err != nil {
+			return err
+		}
+	}
+
 	// Update the value in the DB.
 	if err := a.core.UpdateSettingsByKey(key, b); err != nil {
 		return err
@@ -339,9 +424,25 @@ func (a *App) UpdateSettingsByKey(c echo.Context) error {
 	return a.handleSettingsRestart(c)
 }
 
+// validateOIDCSettings validates default roles and claim mapping.
+func (a *App) validateOIDCSettings(set models.Settings) error {
+	userRoles, err := a.core.GetRoles("", "", "")
+	if err != nil {
+		return err
+	}
+	listRoles, err := a.core.GetListRoles("", "", "")
+	if err != nil {
+		return err
+	}
+	if err := validateOIDCSettings(set, userRoles, listRoles); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return nil
+}
+
 // handleSettingsRestart checks for running campaigns and either triggers an
 // immediate app restart or marks the app as needing a restart.
-func (a *App) handleSettingsRestart(c echo.Context) error {
+func (a *App) handleSettingsRestart(c *echo.Context) error {
 	// If there are any active campaigns, don't do an auto reload and
 	// warn the user on the frontend.
 	if a.manager.HasRunningCampaigns() {
@@ -363,13 +464,30 @@ func (a *App) handleSettingsRestart(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
+// logsView is the admin page view for the log viewer.
+type logsView struct {
+	adminView
+
+	Lines []string
+}
+
+// ViewLogs renders the HTML view for the application log viewer.
+func (a *App) ViewLogs(c *echo.Context) error {
+	data := logsView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.logs"), "", "settings.logs"),
+		Lines:     a.bufLog.Lines(),
+	}
+
+	return c.Render(http.StatusOK, "admin-logs", data)
+}
+
 // GetLogs returns the log entries stored in the log buffer.
-func (a *App) GetLogs(c echo.Context) error {
+func (a *App) GetLogs(c *echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{a.bufLog.Lines()})
 }
 
 // TestSMTPSettings returns the log entries stored in the log buffer.
-func (a *App) TestSMTPSettings(c echo.Context) error {
+func (a *App) TestSMTPSettings(c *echo.Context) error {
 	// Copy the raw JSON post body.
 	reqBody, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -415,7 +533,7 @@ func (a *App) TestSMTPSettings(c echo.Context) error {
 	m := models.Message{}
 	m.From = a.cfg.FromEmail
 	m.To = []string{to}
-	m.Subject = a.i18n.T("settings.smtp.testConnection")
+	m.Subject = a.i18n.T("globals.buttons.testConnection")
 	m.Body = b.Bytes()
 	if err := msgr.Push(m); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -424,7 +542,7 @@ func (a *App) TestSMTPSettings(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{a.bufLog.Lines()})
 }
 
-func (a *App) GetAboutInfo(c echo.Context) error {
+func (a *App) GetAboutInfo(c *echo.Context) error {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 
@@ -433,4 +551,45 @@ func (a *App) GetAboutInfo(c echo.Context) error {
 	out.System.OSMB = mem.Sys / 1024 / 1024
 
 	return c.JSON(http.StatusOK, out)
+}
+
+func sanitizeFromAddresses(addresses []string) ([]string, error) {
+	if len(addresses) > 250 {
+		return nil, fmt.Errorf("omax 250 `from` addresses are allowed")
+	}
+
+	out := make([]string, 0, len(addresses))
+	seen := make(map[string]struct{}, len(addresses))
+	for _, a := range addresses {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		if utf8.RuneCountInString(a) > stdInputMaxLen {
+			return nil, fmt.Errorf("`from` address cannot exceed %d characters", stdInputMaxLen)
+		}
+
+		// The first from email address must not contain template expressions as that's
+		// used in non-campaign emails also.
+		if models.HasTplExpr(a) {
+			if len(out) == 0 {
+				return nil, fmt.Errorf("default (first) `from` address cannot contain template expressions")
+			}
+		} else {
+			if _, err := mail.ParseAddress(a); err != nil {
+				return nil, fmt.Errorf("invalid from email address: %s", a)
+			}
+		}
+		if _, ok := seen[a]; ok {
+			continue
+		}
+		seen[a] = struct{}{}
+		out = append(out, a)
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one `from` address is required")
+	}
+
+	return out, nil
 }

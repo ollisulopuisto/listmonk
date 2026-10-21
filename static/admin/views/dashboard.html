@@ -1,0 +1,157 @@
+{{ define "admin-dashboard" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $c := $d.Counts -}}
+
+<script>
+	window._dashboardCharts = {{ ToJSON $d.Charts }};
+</script>
+
+<section class="dashboard">
+	<header class="page-header">
+		<h3 class="page-title">{{ now | date "January 02, 2006" }}</h3>
+	</header>
+
+	<div class="vstack gap-6">
+		<section class="row">
+			<div class="col-3">
+				<article class="card stat-card">
+					<small class="text-light">{{ Icon "list" }} {{ .L.T "globals.terms.lists" }}</small>
+					<div class="stat-value"><a href="{{ URI "/admin/lists" }}" class="unstyled">{{ FormatNumber $c.Lists.Total }}</a></div>
+					<dl class="stat-meta hstack justify-between">
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/lists" }}?type=public" class="unstyled"><strong>{{ FormatNumber $c.Lists.Public }}</strong></a></dt><dd class="text-light">{{ .L.T "globals.terms.public" }}</dd></div>
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/lists" }}?type=private" class="unstyled"><strong>{{ FormatNumber $c.Lists.Private }}</strong></a></dt><dd class="text-light">{{ .L.T "globals.terms.private" }}</dd></div>
+					</dl>
+				</article>
+			</div>
+
+			<div class="col-3">
+				<article class="card stat-card">
+					<small class="text-light">{{ Icon "at-sign" }} {{ .L.T "globals.terms.subscribers" }}</small>
+					<div class="stat-value"><a href="{{ URI "/admin/subscribers" }}" class="unstyled">{{ FormatNumber $c.Subscribers.Total }}</a></div>
+					<dl class="stat-meta hstack justify-between">
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/subscribers" }}?subscription_status=none" class="unstyled"><strong>{{ FormatNumber $c.Subscribers.Orphans }}</strong></a></dt><dd class="text-light">{{ .L.T "dashboard.orphanSubs" }}</dd></div>
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/subscribers" }}?status=blocklisted" class="unstyled"><strong>{{ FormatNumber $c.Subscribers.Blocklisted }}</strong></a></dt><dd class="text-light">{{ .L.T "globals.terms.blocklisted" }}</dd></div>
+					</dl>
+				</article>
+			</div>
+
+			<div class="col-3">
+				<article class="card stat-card">
+					<small class="text-light">{{ Icon "send" }} {{ .L.T "globals.terms.campaigns" }}</small>
+					<div class="stat-value"><a href="{{ URI "/admin/campaigns" }}" class="unstyled">{{ FormatNumber $c.Campaigns.Total }}</a></div>
+					<dl class="stat-meta hstack justify-between">
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/campaigns" }}?status=scheduled" class="unstyled"><strong>{{ FormatNumber (index $c.Campaigns.ByStatus "scheduled") }}</strong></a></dt><dd class="text-light">{{ .L.T "globals.terms.scheduled" }}</dd></div>
+						<div class="hstack gap-1"><dt><a href="{{ URI "/admin/campaigns" }}?status=finished" class="unstyled"><strong>{{ FormatNumber (index $c.Campaigns.ByStatus "finished") }}</strong></a></dt><dd class="text-light">{{ .L.T "globals.terms.finished" }}</dd></div>
+					</dl>
+				</article>
+			</div>
+
+			<div class="col-3">
+				<article class="card stat-card">
+					<small class="text-light">{{ Icon "mail" }} {{ .L.T "dashboard.messagesSent" }}</small>
+					<div class="stat-value">{{ FormatNumber $c.Messages }}</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="row">
+			<div class="col-6">
+				<article class="card float">
+					<h5 class="title"><a href="{{ URI "/admin/campaigns/analytics" }}" class="unstyled">{{ .L.T "dashboard.campaignViews" }}</a></h5>
+					<div class="chart-box">
+						<canvas id="chart-views"></canvas>
+						<template>{{ template "empty-state" }}</template>
+					</div>
+				</article>
+			</div>
+
+			<div class="col-6">
+				<article class="card float">
+					<h5 class="title"><a href="{{ URI "/admin/campaigns/analytics" }}" class="unstyled">{{ .L.T "dashboard.linkClicks" }}</a></h5>
+					<div class="chart-box">
+						<canvas id="chart-clicks"></canvas>
+						<template>{{ template "empty-state" }}</template>
+					</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="row">
+			<div class="col-8">
+				<article class="card float">
+					<h5 class="title">{{ .L.Ts "globals.terms.recent" "name" ((.L.T "globals.terms.campaigns") | lower) }}</h5>
+					<div class="table-wrapper">
+						<table>
+							<tbody>
+								{{- range $d.Campaigns }}
+									<tr>
+										<td width="55%">
+											<div class="avatar{{ if eq .Status "cancelled" }} disabled{{ end }}">
+												{{ template "avatar-icon" dict "Kind" "campaign" "Name" .Name "Href" (printf "%s/%d" (URI "/admin/campaigns") .ID) "Title" (printf "%s %s" ($.L.T "globals.buttons.view") .Name) }}
+												<div class="avatar-label"><a href="{{ URI "/admin/campaigns" }}/{{ .ID }}" class="unstyled">{{ .Name }}</a></div>
+											</div>
+										</td>
+										<td width="20%">
+											<a href="{{ URI "/admin/campaigns" }}?status={{ .Status }}" title="{{ $.L.T "globals.buttons.filter" }} {{ $.L.T (printf "globals.terms.%s" .Status) }}">
+												{{ Badge (list (Dot) ($.L.T (printf "globals.terms.%s" .Status))) (printf "enum status-%s" .Status) }}
+											</a>
+										</td>
+										<td width="20%"class="text-light">
+											{{- if and (eq .Status "scheduled") .SendAt.Valid }}{{ NiceDate .SendAt }}{{ else }}{{ NiceDate .CreatedAt }}{{ end -}}
+										</td>
+										<td class="actions align-right">
+										{{- if $d.Can "campaigns:get_analytics" }}
+											{{- $from := now.AddDate 0 0 -30 -}}
+											{{- if .StartedAt.Valid }}{{ $from = .StartedAt.Time.Local }}{{ end -}}
+											<a href="{{ URI "/admin/campaigns/analytics" }}?id={{ .ID }}&from={{ $from.Format "2006-01-02" }}" title="{{ $.L.T "globals.terms.analytics" }}">{{ Icon "bar-chart-2" }}</a>
+										{{- end }}
+										</td>
+									</tr>
+								{{- else }}
+									{{ template "empty-state" 4 }}
+								{{- end }}
+							</tbody>
+						</table>
+					</div>
+				</article>
+			</div>
+
+			<div class="col-4">
+				{{- $s := $d.System -}}
+				<article class="card float">
+					<h5 class="title">{{ Icon "activity" }} {{ .L.T "globals.terms.system" }}</h5>
+					<dl class="vstack gap-4">
+						<div class="hstack justify-between"><dt>Uptime</dt><dd class="text-light">{{ $s.Uptime }}</dd></div>
+						<div class="hstack justify-between"><dt>App memory</dt><dd class="text-light">{{ FormatNumber (int $s.AppMemMB) }} MB</dd></div>
+						{{- if $s.HasHostMem }}
+						<div class="vstack gap-1">
+							<dt class="hstack justify-between">System memory<span class="text-light">{{ FormatNumber (int $s.MemUsedMB) }} / {{ FormatNumber (int $s.MemTotalMB) }} MB</span></dt>
+							<dd><meter min="0" max="100" value="{{ $s.MemPct }}" optimum="30" low="70" high="90" title="{{ $s.MemPct }}%"></meter></dd>
+						</div>
+						{{- end }}
+						{{- if $s.HasLoad }}
+						<div class="vstack gap-1">
+							<dt class="hstack justify-between">CPU load<span class="text-light">{{ $s.Load1 }} / {{ $s.Load5 }} / {{ $s.Load15 }}</span></dt>
+							<dd><meter min="0" max="100" value="{{ $s.LoadPct }}" optimum="30" low="70" high="90" title="{{ $s.LoadPct }}%"></meter></dd>
+						</div>
+						{{- end }}
+						<div class="hstack justify-between"><dt>CPU cores</dt><dd class="text-light">{{ $s.NumCPU }}</dd></div>
+					</dl>
+				</article>
+			</div>
+		</section>
+
+		{{- if $d.CacheSlowQueries }}
+			<div role="alert">
+				*{{ .L.T "globals.messages.slowQueriesCached" }}
+				<a href="https://listmonk.app/docs/maintenance/performance/" target="_blank" rel="noopener noreferrer">{{ .L.T "globals.buttons.learnMore" }}</a>
+			</div>
+		{{- end }}
+	</div>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/dashboard.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

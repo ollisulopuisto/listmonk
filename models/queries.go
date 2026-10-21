@@ -1,13 +1,6 @@
 package models
 
-import (
-	"context"
-	"database/sql"
-	"strings"
-
-	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
-)
+import "github.com/jmoiron/sqlx"
 
 // Queries contains all prepared SQL queries.
 type Queries struct {
@@ -36,7 +29,10 @@ type Queries struct {
 	DeleteOrphanSubscribers         *sqlx.Stmt `query:"delete-orphan-subscribers"`
 	UnsubscribeByCampaign           *sqlx.Stmt `query:"unsubscribe-by-campaign"`
 	ExportSubscriberData            *sqlx.Stmt `query:"export-subscriber-data"`
+	GetSubscriberCharts             *sqlx.Stmt `query:"get-subscriber-charts"`
 	GetSubscriberActivity           *sqlx.Stmt `query:"get-subscriber-activity"`
+	DeleteSubscriberCampaignViews   *sqlx.Stmt `query:"delete-subscriber-campaign-views"`
+	DeleteSubscriberLinkClicks      *sqlx.Stmt `query:"delete-subscriber-link-clicks"`
 
 	// Non-prepared arbitrary subscriber queries.
 	QuerySubscribers                       string     `query:"query-subscribers"`
@@ -49,6 +45,20 @@ type Queries struct {
 	BlocklistSubscribersByQuery            string     `query:"blocklist-subscribers-by-query"`
 	DeleteSubscriptionsByQuery             string     `query:"delete-subscriptions-by-query"`
 	UnsubscribeSubscribersFromListsByQuery string     `query:"unsubscribe-subscribers-from-lists-by-query"`
+
+	GetListAnalyticsItems       *sqlx.Stmt `query:"get-list-analytics-items"`
+	GetCampaignAnalyticsItems   *sqlx.Stmt `query:"get-campaign-analytics-items"`
+	GetListAnalyticsCounts      string     `query:"get-list-analytics-counts"`
+	GetListViewCounts           *sqlx.Stmt `query:"get-list-view-counts"`
+	GetListClickCounts          *sqlx.Stmt `query:"get-list-click-counts"`
+	GetListTotalViewCounts      *sqlx.Stmt `query:"get-list-total-view-counts"`
+	GetListTotalClickCounts     *sqlx.Stmt `query:"get-list-total-click-counts"`
+	GetListBounceCounts         *sqlx.Stmt `query:"get-list-bounce-counts"`
+	GetListSubscriptionCounts   *sqlx.Stmt `query:"get-list-subscription-counts"`
+	GetListUnsubscriptionCounts *sqlx.Stmt `query:"get-list-unsubscription-counts"`
+	GetListLinkCounts           *sqlx.Stmt `query:"get-list-link-counts"`
+	GetListCharts               *sqlx.Stmt `query:"get-list-charts"`
+	GetListChartsLive           string     `query:"get-list-charts-live"`
 
 	CreateList      *sqlx.Stmt `query:"create-list"`
 	QueryLists      string     `query:"query-lists"`
@@ -70,15 +80,17 @@ type Queries struct {
 
 	// These two queries are read as strings and based on settings.individual_tracking=on/off,
 	// are interpolated and copied to view and click counts. Same query, different tables.
-	GetCampaignAnalyticsCounts string     `query:"get-campaign-analytics-counts"`
-	GetCampaignViewCounts      *sqlx.Stmt `query:"get-campaign-view-counts"`
-	GetCampaignClickCounts     *sqlx.Stmt `query:"get-campaign-click-counts"`
-	GetCampaignLinkCounts      *sqlx.Stmt `query:"get-campaign-link-counts"`
-	GetCampaignBounceCounts    *sqlx.Stmt `query:"get-campaign-bounce-counts"`
-	DeleteCampaignViews        *sqlx.Stmt `query:"delete-campaign-views"`
-	DeleteCampaignLinkClicks   *sqlx.Stmt `query:"delete-campaign-link-clicks"`
-	ExportCampaignViews        *sqlx.Stmt `query:"export-campaign-views"`
-	ExportCampaignLinkClicks   *sqlx.Stmt `query:"export-campaign-link-clicks"`
+	GetCampaignAnalyticsCounts  string     `query:"get-campaign-analytics-counts"`
+	GetCampaignViewCounts       *sqlx.Stmt `query:"get-campaign-view-counts"`
+	GetCampaignClickCounts      *sqlx.Stmt `query:"get-campaign-click-counts"`
+	GetCampaignLinkCounts       *sqlx.Stmt `query:"get-campaign-link-counts"`
+	GetCampaignBounceCounts     *sqlx.Stmt `query:"get-campaign-bounce-counts"`
+	DeleteCampaignViews         *sqlx.Stmt `query:"delete-campaign-views"`
+	DeleteCampaignLinkClicks    *sqlx.Stmt `query:"delete-campaign-link-clicks"`
+	ExportCampaignViews         *sqlx.Stmt `query:"export-campaign-views"`
+	ExportCampaignLinkClicks    *sqlx.Stmt `query:"export-campaign-link-clicks"`
+	GetCampaignTotalViewCounts  *sqlx.Stmt `query:"get-campaign-total-view-counts"`
+	GetCampaignTotalClickCounts *sqlx.Stmt `query:"get-campaign-total-click-counts"`
 
 	NextCampaigns            *sqlx.Stmt `query:"next-campaigns"`
 	GetRunningCampaign       *sqlx.Stmt `query:"get-running-campaign"`
@@ -98,7 +110,7 @@ type Queries struct {
 	DeleteMedia *sqlx.Stmt `query:"delete-media"`
 
 	CreateTemplate     *sqlx.Stmt `query:"create-template"`
-	GetTemplates       *sqlx.Stmt `query:"get-templates"`
+	GetTemplates       string     `query:"get-templates"`
 	UpdateTemplate     *sqlx.Stmt `query:"update-template"`
 	SetDefaultTemplate *sqlx.Stmt `query:"set-default-template"`
 	DeleteTemplate     *sqlx.Stmt `query:"delete-template"`
@@ -125,71 +137,31 @@ type Queries struct {
 	UpdateUserLogin    *sqlx.Stmt `query:"update-user-login"`
 	SetUserTwoFA       *sqlx.Stmt `query:"set-user-twofa"`
 	DeleteUsers        *sqlx.Stmt `query:"delete-users"`
-	GetUsers           *sqlx.Stmt `query:"get-users"`
+	GetUsers           string     `query:"get-users"`
 	GetUser            *sqlx.Stmt `query:"get-user"`
 	GetAPITokens       *sqlx.Stmt `query:"get-api-tokens"`
 	LoginUser          *sqlx.Stmt `query:"login-user"`
 	DeleteUserSessions *sqlx.Stmt `query:"delete-user-sessions"`
 
 	CreateRole            *sqlx.Stmt `query:"create-role"`
-	GetUserRoles          *sqlx.Stmt `query:"get-user-roles"`
-	GetListRoles          *sqlx.Stmt `query:"get-list-roles"`
+	GetUserRoles          string     `query:"get-user-roles"`
+	GetListRoles          string     `query:"get-list-roles"`
 	UpdateRole            *sqlx.Stmt `query:"update-role"`
 	DeleteRole            *sqlx.Stmt `query:"delete-role"`
 	UpsertListPermissions *sqlx.Stmt `query:"upsert-list-permissions"`
 	DeleteListPermission  *sqlx.Stmt `query:"delete-list-permission"`
 }
 
-// compileSubscriberQueryTpl takes an arbitrary WHERE expressions
-// to filter subscribers from the subscribers table and prepares a query
-// out of it using the raw `query-subscribers-template` query template.
-// While doing this, a readonly transaction is created and the query is
-// dry run on it to ensure that it is indeed readonly.
-func (q *Queries) compileSubscriberQueryTpl(searchStr, queryExp string, db *sqlx.DB, subStatus string) (string, error) {
-	tx, err := db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-
-	// There's an arbitrary query condition.
-	cond := "TRUE"
-	if queryExp != "" {
-		cond = queryExp
+// ApplyOrphanFilter handles the special subscription_status value "none", which
+// filters orphan subscribers (no list subscriptions).
+func ApplyOrphanFilter(cond, subStatus string) (string, string) {
+	const orphanSubCond = "NOT EXISTS (SELECT 1 FROM subscriber_lists WHERE subscriber_id = subscribers.id)"
+	if subStatus == "none" {
+		if cond == "" {
+			cond = "TRUE"
+		}
+		return "(" + cond + ") AND " + orphanSubCond, ""
 	}
 
-	// Perform the dry run.
-	stmt := strings.ReplaceAll(q.QuerySubscribersTpl, "%query%", cond)
-	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr); err != nil {
-		return "", err
-	}
-
-	return stmt, nil
-}
-
-// compileSubscriberQueryTpl takes an arbitrary WHERE expressions and a subscriber
-// query template that depends on the filter (eg: delete by query, blocklist by query etc.)
-// combines and executes them.
-func (q *Queries) ExecSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, db *sqlx.DB, subStatus string, args ...any) error {
-	// Perform a dry run.
-	filterExp, err := q.compileSubscriberQueryTpl(searchStr, queryExp, db, subStatus)
-	if err != nil {
-		return err
-	}
-
-	if len(listIDs) == 0 {
-		listIDs = []int{}
-	}
-
-	// Insert the subscriber filter query into the target query.
-	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", filterExp)
-
-	// First argument is the boolean indicating if the query is a dry run.
-	a := append([]any{false, pq.Array(listIDs), subStatus, searchStr}, args...)
-
-	// Execute the query on the DB.
-	if _, err := db.Exec(stmt, a...); err != nil {
-		return err
-	}
-	return nil
+	return cond, subStatus
 }

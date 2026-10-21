@@ -12,6 +12,10 @@ import (
 )
 
 const (
+	SubscriptionActionAdd         = "add"
+	SubscriptionActionRemove      = "remove"
+	SubscriptionActionUnsubscribe = "unsubscribe"
+
 	SubscriberStatusEnabled     = "enabled"
 	SubscriberStatusDisabled    = "disabled"
 	SubscriberStatusBlockListed = "blocklisted"
@@ -39,6 +43,34 @@ type Subscriber struct {
 type subLists struct {
 	SubscriberID int            `db:"subscriber_id"`
 	Lists        types.JSONText `db:"lists"`
+}
+
+// SubscriberListView is a minimal representation of a subscriber's list
+// subscription, parsed from the raw Lists JSON for use in HTML views.
+type SubscriberListView struct {
+	ID                    int       `json:"id"`
+	Name                  string    `json:"name"`
+	Type                  string    `json:"type"`
+	Optin                 string    `json:"optin"`
+	SubscriptionStatus    string    `json:"subscription_status"`
+	SubscriptionCreatedAt null.Time `json:"subscription_created_at"`
+	SubscriptionUpdatedAt null.Time `json:"subscription_updated_at"`
+	Restricted            bool      `json:"restricted"`
+}
+
+// ParsedLists unmarshals the subscriber's raw Lists JSON into a slice for
+// rendering in HTML views.
+func (s Subscriber) ParsedLists() []SubscriberListView {
+	if len(s.Lists) == 0 {
+		return nil
+	}
+
+	var out []SubscriberListView
+	if err := json.Unmarshal(s.Lists, &out); err != nil {
+		return nil
+	}
+
+	return out
 }
 
 // GetIDs returns the list of subscriber IDs.
@@ -106,6 +138,7 @@ type Subscription struct {
 	List
 	SubscriptionStatus    null.String     `db:"subscription_status" json:"subscription_status"`
 	SubscriptionCreatedAt null.String     `db:"subscription_created_at" json:"subscription_created_at"`
+	SubscriptionUpdatedAt null.String     `db:"subscription_updated_at" json:"subscription_updated_at"`
 	Meta                  json.RawMessage `db:"meta" json:"meta"`
 }
 

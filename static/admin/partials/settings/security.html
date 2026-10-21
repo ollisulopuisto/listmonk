@@ -1,0 +1,201 @@
+{{ define "settings-security" -}}
+{{- $d := .Data -}}
+<div class="settings-items">
+	<fieldset class="card" data-keywords="login session duration expiry timeout">
+		<legend>{{ .L.T "globals.buttons.login" }}</legend>
+		<label data-field>
+			{{ .L.T "globals.fields.sessionDuration" }}
+			<input required placeholder="7d" x-model="form['security.session_duration']" />
+		</label>
+	</fieldset>
+
+	<hr />
+
+	<fieldset class="card" data-keywords="oidc sso single sign-on openid connect authentication login provider identity roles mapping claims groups">
+		<legend>{{ .L.T "settings.security.enableOIDC" }}</legend>
+		<label data-field>
+			<input type="checkbox" role="switch" x-model="form['security.oidc'].enabled" />
+			{{ .L.T "globals.buttons.enable" }}
+			<small data-hint>{{ .L.T "settings.security.OIDCHelp" }}</small>
+		</label>
+
+		<template x-if="form['security.oidc'].enabled">
+			<div class="mt-4">
+				<label data-field>
+					{{ .L.T "settings.security.OIDCURL" }}
+					<input type="url" pattern="https?://.*" maxlength="300" placeholder="https://login.yoursite.com"
+						required x-model="form['security.oidc'].provider_url" />
+					<div class="hstack mt-2">
+						<a href="#" @click.prevent="setOIDCProvider('google')">Google</a>
+						<a href="#" @click.prevent="setOIDCProvider('microsoft')">Microsoft</a>
+						<a href="#" @click.prevent="setOIDCProvider('apple')">Apple</a>
+					</div>
+				</label>
+
+				<label data-field>
+					{{ .L.T "settings.security.OIDCName" }}
+					<input x-ref="oidcProviderName" maxlength="200" x-model="form['security.oidc'].provider_name" />
+				</label>
+
+				<label data-field>
+					{{ .L.T "settings.security.OIDCClientID" }}
+					<input x-ref="oidcClientID" maxlength="200" required x-model="form['security.oidc'].client_id" />
+				</label>
+
+				<label data-field>
+					{{ .L.T "settings.security.OIDCClientSecret" }}
+					<input type="password" maxlength="200" required x-model="form['security.oidc'].client_secret" />
+				</label>
+
+				<div data-field>
+					<label>{{ .L.T "settings.security.OIDCRedirectURL" }}</label>
+					<fieldset class="group">
+						<input readonly value="{{ $.ConfigJS.RootURL }}/auth/oidc" />
+						<button type="button" class="outline" title="{{ .L.T "globals.messages.clickToCopy" }}" @click="copyToClipboard('{{ $.ConfigJS.RootURL }}/auth/oidc')">{{ Icon "copy" }}</button>
+					</fieldset>
+					<template x-if="!isURLOk">
+						<p class="text-danger" data-hint>
+							{{ Icon "alert-triangle" }} {{ .L.T "settings.security.OIDCRedirectWarning" }}
+						</p>
+					</template>
+				</div>
+
+				<hr />
+
+				<label data-field class="w-100">
+					<input type="checkbox" role="switch" x-model="form['security.oidc'].logout" />
+					{{ .L.T "settings.security.OIDCLogout" }}
+				</label>
+
+				<label data-field class="w-100">
+					<input type="checkbox" role="switch" x-model="form['security.oidc'].auto_create_users" />
+					{{ .L.T "settings.security.OIDCAutoCreateUsers" }}
+					<small data-hint>{{ .L.T "settings.security.OIDCAutoCreateUsersHelp" }}</small>
+				</label>
+
+
+				<fieldset :disabled="!form['security.oidc'].auto_create_users">
+					<legend>{{ .L.T "globals.terms.roles" }}</legend>
+					<div data-field>
+						<label for="oidc-user-role">{{ .L.T "settings.security.OIDCDefaultUserRole" }}</label>
+						<select id="oidc-user-role" required x-model="form['security.oidc'].default_user_role_id">
+							<option value="" disabled>&mdash;</option>
+							{{- range $d.UserRoles }}
+								<option value="{{ .ID }}">{{ .Name }}</option>
+							{{- end }}
+						</select>
+						<small data-hint>{{ .L.T "settings.security.OIDCDefaultRoleHelp" }}</small>
+					</div>
+
+					<div data-field>
+						<label for="oidc-list-role">{{ .L.T "settings.security.OIDCDefaultListRole" }}</label>
+						<select id="oidc-list-role" x-model="form['security.oidc'].default_list_role_id">
+							<option value="">&mdash; {{ .L.T "globals.terms.none" }} &mdash;</option>
+							{{- range $d.ListRoles }}
+								<option value="{{ .ID }}">{{ .Name }}</option>
+							{{- end }}
+						</select>
+						<small data-hint>{{ .L.T "settings.security.OIDCDefaultRoleHelp" }}</small>
+					</div>
+
+				</fieldset>
+
+				<fieldset class="card" :disabled="!form['security.oidc'].auto_create_users">
+					<legend>{{ .L.T "settings.security.OIDCRoleMapping" }}</legend>
+					<p data-hint>{{ .L.T "settings.security.OIDCRoleMappingHelp" }}</p>
+					<template x-for="(mapping, n) in form['security.oidc'].roles" :key="n">
+						<fieldset class="card">
+							<legend x-text="`#${n + 1}`"></legend>
+							<div class="row">
+								<label class="col-6" data-field>
+									{{ .L.T "settings.security.OIDCClaim" }}
+									<input required placeholder="groups" x-model="mapping.claim" />
+								</label>
+								<label class="col-6" data-field>
+									{{ .L.T "globals.terms.value" }}
+									<input required placeholder="editors" x-model="mapping.match" />
+								</label>
+							</div>
+							<div class="row">
+								<label class="col-6" data-field>
+									{{ .L.Tc "users.userRole" 1 }}
+									<select x-model="mapping.user_role_id">
+										<option value="">&mdash; {{ .L.T "globals.terms.default" }} &mdash;</option>
+										{{- range $d.UserRoles }}
+											<option value="{{ .ID }}">{{ .Name }}</option>
+										{{- end }}
+									</select>
+								</label>
+								<label class="col-6" data-field>
+									{{ .L.Tc "users.listRole" 2 }}
+									<select x-model="mapping.list_role_id">
+										<option value="">&mdash; {{ .L.T "globals.terms.default" }} &mdash;</option>
+										{{- range $d.ListRoles }}
+											<option value="{{ .ID }}">{{ .Name }}</option>
+										{{- end }}
+									</select>
+								</label>
+							</div>
+							<button type="button" class="outline small" data-variant="danger" @click="form['security.oidc'].roles.splice(n, 1)">
+								{{ Icon "trash-2" }} {{ .L.T "globals.buttons.remove" }}
+							</button>
+						</fieldset>
+					</template>
+					<button type="button" class="outline small" @click="form['security.oidc'].roles.push({ claim: '', match: '', user_role_id: '', list_role_id: '' })">
+						{{ Icon "plus" }} {{ .L.T "globals.buttons.addNew" }}
+					</button>
+				</fieldset>
+			</div>
+		</template>
+	</fieldset>
+
+	<hr />
+
+	<fieldset class="card" data-keywords="captcha altcha hcaptcha spam bot protection public form verification">
+		<legend>{{ .L.T "settings.security.enableCaptcha" }}</legend>
+		<label data-field>
+			<input type="checkbox" role="switch" x-model="captchaEnabled" />
+			{{ .L.T "globals.buttons.enable" }}
+			<small data-hint>{{ .L.T "settings.security.enableCaptchaHelp" }}</small>
+		</label>
+
+		<template x-if="captchaEnabled">
+			<div class="mt-4">
+				<div data-field class="hstack">
+					<label><input type="radio" value="altcha" name="captcha_provider" x-model="captchaProvider" /> ALTCHA</label>
+					<label><input type="radio" value="hcaptcha" name="captcha_provider" x-model="captchaProvider" /> hCaptcha (deprecated)</label>
+				</div>
+
+				<div x-show="captchaProvider === 'altcha'">
+					<label data-field>
+						{{ .L.T "settings.security.altchaComplexity" }}
+						<input type="number" min="1000" max="1000000" x-model.number="form['security.captcha'].altcha.complexity" />
+						<small data-hint>{{ .L.T "settings.security.altchaComplexityHelp" }}</small>
+					</label>
+				</div>
+				<div x-show="captchaProvider === 'hcaptcha'">
+					<label data-field>
+						{{ .L.T "settings.security.captchaKey" }}
+						<input maxlength="200" x-model="form['security.captcha'].hcaptcha.key" />
+						<small data-hint>{{ .L.T "settings.security.captchaKeyHelp" }}</small>
+					</label>
+					<label data-field>
+						{{ .L.T "settings.security.captchaSecret" }}
+						<input type="password" maxlength="200" x-model="form['security.captcha'].hcaptcha.secret" />
+					</label>
+				</div>
+			</div>
+		</template>
+	</fieldset>
+
+	<hr />
+
+	<fieldset class="card" data-keywords="trusted urls cors cross-origin api access allowed hosts">
+		<legend>{{ .L.T "settings.security.trustedURLs" }} / CORS</legend>
+		<label data-field>
+			<textarea rows="5" placeholder="https://example.com" x-model="trustedURLs"></textarea>
+			<small data-hint>{{ .L.T "settings.security.trustedURLsHelp" }}</small>
+		</label>
+	</fieldset>
+</div>
+{{- end }}

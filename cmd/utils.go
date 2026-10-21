@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -111,4 +112,106 @@ func getQueryInts(param string, qp url.Values) ([]int, error) {
 	}
 
 	return out, nil
+}
+
+// makeQuery takes a url.Values and a list of default key-value pairs, and returns a new url.Values with the defaults applied.
+// Any key that is not in defaults (removes unknown keys coming from the frontend) is filtered out.
+// Any key that's there but has an empty value is also filtered out (keeps query params clean without empty values)..
+// This is opinionated specifically for use with models.PageProps{} and its handlers.
+func makeQuery(q url.Values, defaults map[string]string) url.Values {
+	out := make(url.Values)
+
+	// Set the defaults first.
+	for key, def := range defaults {
+		if def != "" {
+			out.Set(key, def)
+		}
+	}
+
+	// Non-empty values in incoming params override the defaults.
+	for key, vals := range q {
+		if _, ok := defaults[key]; !ok {
+			continue
+		}
+
+		next := make([]string, 0, len(vals))
+		for _, val := range vals {
+			if val := strings.TrimSpace(val); val != "" {
+				next = append(next, val)
+			}
+		}
+		if len(next) > 0 {
+			out[key] = next
+		}
+	}
+
+	// Common across many handlers for arbitary queries.
+	search := strings.TrimSpace(out.Get("search"))
+	if search != "" {
+		out.Set("search", search)
+	}
+	query := strings.TrimSpace(out.Get("query"))
+	if query != "" {
+		out.Set("query", query)
+	}
+
+	return out
+}
+
+// compactDate, given a date, omits the current year and returns a date/time string.
+func compactDate(t, now time.Time, withTime bool, omitYear ...bool) string {
+	t = t.In(now.Location())
+	layout := "Mon, 2 Jan"
+	if t.Year() != now.Year() && !(len(omitYear) > 0 && omitYear[0]) {
+		layout += " 2006"
+	}
+	if withTime {
+		layout += ", 15:04"
+	}
+	return t.Format(layout)
+}
+
+// formatTimestamps takes 2 timestamps and returns an A - B formatted date
+// omitting shared components (same month etc.).
+func formatTimestamps(from, to, now time.Time) string {
+	from, to = from.In(now.Location()), to.In(now.Location())
+	if from.IsZero() || to.IsZero() || to.Before(from) {
+		return ""
+	}
+
+	endLayout := "Mon 02 Jan 2006"
+	if from.Year() == to.Year() && from.YearDay() == to.YearDay() {
+		return from.Format("15:04") + " - " + to.Format("15:04") + "\n" + to.Format(endLayout)
+	}
+
+	startLayout := "Mon 02"
+	if from.Month() != to.Month() || from.Year() != to.Year() {
+		startLayout += " Jan"
+	}
+	if from.Year() != to.Year() && from.Year() != now.Year() {
+		startLayout += " 2006"
+	}
+	return from.Format(startLayout) + " - " + to.Format(endLayout)
+}
+
+// parseDateTime parses datetime formats.
+func parseDateTime(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+
+	var layout string
+	switch len(s) {
+	case 10:
+		layout = "2006-01-02"
+	case 16:
+		layout = "2006-01-02T15:04"
+	case 19:
+		layout = "2006-01-02T15:04:05"
+	default:
+		return time.Time{}, false
+	}
+	t, err := time.ParseInLocation(layout, s, time.Local)
+
+	return t, err == nil
 }

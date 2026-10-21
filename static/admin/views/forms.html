@@ -1,0 +1,82 @@
+{{ define "admin-forms" -}}
+{{ template "admin-header" . }}
+{{ template "breadcrumbs" dict "Root" . "Current" .Data.Title "Parents" (list (dict "Label" (.L.T "globals.terms.lists") "URL" (URI "/admin/lists") "CanLink" true)) }}
+{{- $d := .Data -}}
+
+<script>const _lists = {{ ToJSON $d.PublicLists }};</script>
+<section class="forms" x-data="formsView(_lists)">
+	<header class="row page-header">
+		<div class="col-4">
+			<h1 class="page-title">{{ .L.T "globals.terms.forms" }}</h1>
+		</div>
+		<div class="col-8 hstack justify-end buttons">
+			{{- if $.ConfigJS.PublicSubscription.Enabled }}
+				<a href="{{ $.ConfigJS.RootURL }}/subscription/form" target="_blank" rel="noopener noreferrer" class="button small" data-testid="url" title="{{ $.ConfigJS.RootURL }}/subscription/form">
+					{{ Icon "arrow-up-right" }} {{ .L.T "forms.publicSubPage" }}
+				</a>
+			{{- end }}
+		</div>
+	</header>
+
+	<div class="page-content">
+		{{- if not $d.PublicLists }}
+			<p class="card text-light">{{ .L.T "forms.noPublicLists" }}</p>
+		{{- else }}
+			<div class="row">
+				<div class="col-4">
+					<fieldset class="group mt-0">
+						<legend>{{ .L.T "globals.terms.lists" }}</legend>
+						<p class="text-light">{{ .L.T "forms.selectHelp" }}</p>
+
+						<ul class="no lists" data-testid="lists">
+							{{- range $i, $list := $d.PublicLists }}
+								<li>
+									<label><input type="checkbox" value="{{ $list.UUID }}" x-model="checked" {{- if eq $i 0 }} autofocus{{- end }} /> {{ $list.Name }}</label>
+								</li>
+							{{- end }}
+						</ul>
+					</fieldset>
+
+					<fieldset class="group">
+						<legend>{{ .L.T "globals.fields.redirectURL" }}</legend>
+						<p class="text-light">{{ .L.T "forms.redirectURLHelp" }}</p>
+						{{- if $.ConfigJS.PublicSubscription.RedirectURLs }}
+							<ul class="no" data-testid="redirect-urls">
+								<li>
+									<label><input type="radio" name="redirect-url" value="" x-model="redirectURL" /> {{ .L.T "globals.terms.none" }}</label>
+								</li>
+								{{- range $.ConfigJS.PublicSubscription.RedirectURLs }}
+									<li>
+										<label><input type="radio" name="redirect-url" value="{{ . }}" x-model="redirectURL" /> {{ . }}</label>
+									</li>
+								{{- end }}
+							</ul>
+						{{- end }}
+					</fieldset>
+				</div>
+
+				<div class="col-8">
+					<article class="card float" data-testid="form" aria-label="{{ .L.T "forms.formHTML" }}">
+						<h5 class="title">{{ .L.T "forms.formHTML" }}</h5>
+						<p class="text-light">{{ .L.T "forms.formHTMLHelp" }}</p>
+
+						<div x-show="checked.length > 0" x-cloak>
+							<div class="align-right mb-2">
+								<button type="button" class="small" @click="copyHTML" title="{{ .L.T "globals.messages.clickToCopy" }}">
+									{{ Icon "copy" }} {{ .L.T "globals.buttons.copy" }}
+								</button>
+							</div>
+							<code-editor lang="html" disabled x-effect="$el.value = html"></code-editor>
+						</div>
+					</article>
+				</div>
+			</div><!-- row -->
+		{{- end }}
+	</div>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/code-editor.js" }}?v={{ .AssetVersion }}" defer></script>
+<script type="module" src="{{ URI "/admin/static/js/views/forms.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

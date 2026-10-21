@@ -1,0 +1,206 @@
+{{ define "settings-smtp" -}}
+<div class="mb-6 settings-items mail-servers" data-keywords="smtp mail server outgoing email sending host port tls authentication login relay gmail ses sendgrid mailgun postmark from headers retries">
+	<template x-for="(item, n) in form.smtp" :key="n">
+		<details class="repeat-block" :open="item.open" @toggle="setOpen('smtp', n, $event.target.open)">
+			<summary>
+				<div class="row">
+					<div class="col-5">
+						<div class="hstack">
+							<span class="text-light" x-text="`#${n + 1}`"></span>
+							<span class="text-light" x-show="item.name || item.host" x-text="item.name || item.host"></span>
+						</div>
+					</div>
+					<div class="col-7 col-end">
+						<div class="hstack gap-6 justify-end">
+							<label data-field @click.stop>
+								<input type="checkbox" role="switch" x-model="item.enabled" />
+								{{ .L.T "globals.terms.enabled" }}
+							</label>
+							<button type="button" class="outline small" :disabled="!item.enabled" @click.stop.prevent="showSMTPTest(n)">
+								{{ Icon "send" }} {{ .L.T "globals.buttons.testConnection" }}
+							</button>
+							<button type="button" class="outline small" x-show="form.smtp.length > 1" data-variant="danger" @click.stop.prevent="removeSMTP(n)">
+								{{ Icon "trash-2" }} {{ .L.T "globals.buttons.delete" }}
+							</button>
+						</div>
+					</div>
+				</div>
+			</summary>
+
+			<div class="accordion-body">
+				<template x-if="smtpTestItem === n">
+					<fieldset class="card mb-8 mt-8">
+						<p><strong>{{ .L.T "settings.general.fromEmail" }}</strong>: <span x-text="form['app.from_email'].split('\n')[0]"></span></p>
+						<fieldset class="group">
+							<legend>{{ .L.T "settings.smtp.toEmail" }}</legend>
+							<input type="email" required placeholder="email@site.com" :class="`test-email-${n}`" x-model="testEmail" />
+							<button type="button" data-variant="primary" :disabled="isLoading('settings.testSMTP')" @click.prevent="doSMTPTest(item, n)">
+								{{ .L.T "settings.smtp.sendTest" }}
+							</button>
+						</fieldset>
+						<template x-if="errMsg">
+							<label data-field>
+								<textarea readonly rows="4" x-model="errMsg"></textarea>
+							</label>
+						</template>
+					</fieldset>
+				</template>
+
+				<div :aria-disabled="!item.enabled">
+					<fieldset class="card" :disabled="!item.enabled">
+						<legend>{{ .L.T "globals.fields.host" }}</legend>
+						<div class="row">
+							<div class="col-9">
+								<label data-field>
+									{{ .L.T "globals.fields.host" }}
+									<input maxlength="200" placeholder="smtp.yourmailserver.net" x-model="item.host" />
+									<small data-hint>{{ .L.T "settings.mailserver.hostHelp" }}</small>
+								</label>
+							</div>
+							<div class="col-3">
+								<label data-field>
+									{{ .L.T "globals.fields.port" }}
+									<input type="number" min="1" max="65535" placeholder="25" x-model.number="item.port" />
+									<small data-hint>{{ .L.T "settings.mailserver.portHelp" }}</small>
+								</label>
+							</div>
+						</div>
+						<div class="hstack text-8">
+							<a href="#" @click.prevent="fillSMTP(n, 'gmail')">Gmail</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'gmailrelay')">Gmail Relay</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'ses')">Amazon SES</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'azure')">Azure ACS</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'mailgun')">Mailgun</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'mailjet')">Mailjet</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'sendgrid')">Sendgrid</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'postmark')">Postmark</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'forwardemail')">Forward Email</a>
+							<a href="#" @click.prevent="fillSMTP(n, 'lettermint')">Lettermint</a>
+						</div>
+					</fieldset>
+
+					<fieldset class="card" :disabled="!item.enabled">
+						<legend>{{ .L.T "globals.fields.authProtocol" }}</legend>
+						<div data-field>
+							<label>{{ .L.T "globals.fields.authProtocol" }}</label>
+							<select x-model="item.auth_protocol">
+								<option value="login">LOGIN</option>
+								<option value="cram">CRAM</option>
+								<option value="plain">PLAIN</option>
+								<option value="none">None</option>
+							</select>
+						</div>
+						<label data-field>
+							{{ .L.T "globals.fields.username" }}
+							<input maxlength="200" placeholder="mysmtp" :class="`smtp-username-${n}`" :disabled="item.auth_protocol === 'none'" x-model="item.username" />
+						</label>
+						<label data-field>
+							{{ .L.T "globals.fields.password" }}
+							<input type="password" maxlength="200" :class="`smtp-password-${n}`" :disabled="item.auth_protocol === 'none'" x-model="item.password" />
+							<small data-hint>{{ .L.T "globals.messages.passwordChange" }}</small>
+						</label>
+					</fieldset>
+
+					<fieldset class="card" :disabled="!item.enabled">
+						<legend>{{ .L.T "settings.mailserver.tls" }}</legend>
+						<label data-field>
+							{{ .L.T "settings.smtp.heloHost" }}
+							<input maxlength="200" x-model="item.hello_hostname" />
+							<small data-hint>{{ .L.T "settings.smtp.heloHostHelp" }}</small>
+						</label>
+						<div class="row">
+							<div class="col-7">
+								<div data-field>
+									<label>{{ .L.T "settings.mailserver.tls" }}</label>
+									<select x-model="item.tls_type">
+										<option value="none">{{ .L.T "globals.states.off" }}</option>
+										<option value="STARTTLS">STARTTLS</option>
+										<option value="TLS">SSL/TLS</option>
+									</select>
+									<small data-hint>{{ .L.T "settings.mailserver.tlsHelp" }}</small>
+								</div>
+							</div>
+							<div class="col-5" :aria-disabled="item.tls_type === 'none'">
+								<div data-field>
+									<label class="mb-2">{{ .L.T "settings.mailserver.skipTLS" }}</label>
+									<input type="checkbox" role="switch" :disabled="item.tls_type === 'none'" x-model="item.tls_skip_verify" />
+									<small data-hint>{{ .L.T "settings.mailserver.skipTLSHelp" }}</small>
+								</div>
+							</div>
+						</div>
+					</fieldset>
+
+					<fieldset class="card" :disabled="!item.enabled">
+						<legend>{{ .L.T "globals.terms.connection" }}</legend>
+						<label data-field>
+							{{ .L.T "globals.fields.maxConns" }}
+							<input type="number" min="1" max="65535" placeholder="25" x-model.number="item.max_conns" />
+							<small data-hint>{{ .L.T "settings.mailserver.maxConnsHelp" }}</small>
+						</label>
+						<label data-field>
+							{{ .L.T "globals.fields.idleTimeout" }}
+							<input maxlength="10" placeholder="15s" x-model="item.idle_timeout" />
+							<small data-hint>{{ .L.T "settings.mailserver.idleTimeoutHelp" }}</small>
+						</label>
+						<label data-field>
+							{{ .L.T "globals.fields.waitTimeout" }}
+							<input maxlength="10" placeholder="5s" x-model="item.wait_timeout" />
+							<small data-hint>{{ .L.T "settings.mailserver.waitTimeoutHelp" }}</small>
+						</label>
+						<div class="row" data-field>
+							<div class="col-6">
+								<label data-field>
+									{{ .L.T "globals.fields.retries" }}
+									<input type="number" min="1" max="1000" placeholder="2" x-model.number="item.max_msg_retries" />
+									<small data-hint>{{ .L.T "settings.mailserver.retriesHelp" }}</small>
+								</label>
+							</div>
+							<div class="col-6">
+								<label data-field>
+									{{ .L.T "globals.fields.retryDelay" }}
+									<input maxlength="10" placeholder="0s" x-model="item.msg_retry_delay" />
+									<small data-hint>{{ .L.T "settings.smtp.retryDelayHelp" }}</small>
+								</label>
+							</div>
+						</div>
+					</fieldset>
+
+					<fieldset class="card" :disabled="!item.enabled">
+						<legend>{{ .L.T "globals.fields.name" }}</legend>
+						<label data-field>
+							{{ .L.T "globals.fields.name" }}
+							<input maxlength="100" placeholder="email-primary" x-model="item.name" :required="item.exclude_from_default" />
+							<small data-hint>{{ .L.T "settings.mailserver.nameHelp" }}</small>
+						</label>
+						<label data-field>
+							{{ .L.T "settings.smtp.fromAddresses" }}
+							<ot-taginput x-model="item.from_addresses"><input placeholder="user@example.com, anothersite.com" /></ot-taginput>
+							<small data-hint>{{ .L.T "settings.smtp.fromAddressesHelp" }}</small>
+						</label>
+						<label data-field>
+							<input type="checkbox" role="switch" x-model="item.exclude_from_default" :disabled="!item.name" x-effect="if (!item.name) item.exclude_from_default = false" />
+							{{ .L.T "settings.smtp.excludeFromDefault" }}
+							<small data-hint>{{ .L.T "settings.smtp.excludeFromDefaultHelp" }}</small>
+						</label>
+					</fieldset>
+
+					<template x-if="item.email_headers.length === 0 && !item.showHeaders">
+						<p><a href="#" @click.prevent="item.showHeaders = true">{{ Icon "plus" }} {{ .L.T "settings.smtp.setCustomHeaders" }}</a></p>
+					</template>
+					<template x-if="item.email_headers.length > 0 || item.showHeaders">
+						<label data-field>
+							<textarea rows="4" x-model="item.strEmailHeaders" placeholder='[{"X-Custom": "value"}]'></textarea>
+							<small data-hint>{{ .L.T "settings.smtp.customHeadersHelp" }}</small>
+						</label>
+					</template>
+
+				</div>
+			</div><!-- accordion-body -->
+		</details>
+	</template>
+</div>
+
+<button type="button" data-variant="primary" class="btn-new" @click="addSMTP">
+	{{ Icon "plus" }} {{ .L.T "globals.buttons.addNew" }}
+</button>
+{{- end }}

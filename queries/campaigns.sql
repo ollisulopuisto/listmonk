@@ -74,18 +74,19 @@ FROM campaigns c
 WHERE ($1 = 0 OR id = $1)
     AND (CARDINALITY($2::campaign_status[]) = 0 OR status = ANY($2))
     AND (CARDINALITY($3::VARCHAR(100)[]) = 0 OR $3 <@ tags)
-    AND ($4 = '' OR TO_TSVECTOR(CONCAT(name, ' ', subject)) @@ PLAINTO_TSQUERY($4) OR CONCAT(c.name, ' ', c.subject) ILIKE $4)
+    AND ($4 = '' OR TO_TSVECTOR(CONCAT(name, ' ', subject)) @@ PLAINTO_TSQUERY($4) OR CONCAT(c.name, ' ', c.subject) ILIKE ('%' || $4 || '%'))
+    AND ($5 = '' OR type = $5::campaign_type)
     -- Get all campaigns or filter by list IDs.
     AND (
-        $5 OR EXISTS (
-            SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($6::INT[])
+        $6 OR EXISTS (
+            SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($7::INT[])
         )
     )
     -- Filter by specific list ID.
-    AND ($9 = 0 OR EXISTS (
-        SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = $9
+    AND ($8 = 0 OR EXISTS (
+        SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = $8
     ))
-ORDER BY %order% OFFSET $7 LIMIT (CASE WHEN $8 < 1 THEN NULL ELSE $8 END);
+ORDER BY %order% OFFSET $9 LIMIT (CASE WHEN $10 < 1 THEN NULL ELSE $10 END);
 
 -- name: get-campaign
 SELECT campaigns.*,
@@ -110,7 +111,7 @@ SELECT COUNT(*) OVER () AS total, campaigns.*,
         ELSE templates.id = campaigns.archive_template_id END
     )
     WHERE campaigns.archive=true AND campaigns.type='regular' AND campaigns.status=ANY('{running, paused, finished}')
-    ORDER by campaigns.created_at DESC OFFSET $1 LIMIT $2;
+    ORDER by campaigns.started_at DESC NULLS LAST, campaigns.id DESC OFFSET $1 LIMIT $2;
 
 -- name: get-campaign-stats
 -- This query is used to lazy load campaign stats (views, counts, list of lists) given a list of campaign IDs.
@@ -178,10 +179,10 @@ SELECT EXISTS (
 );
 
 -- name: next-campaigns
--- Retreives campaigns that are running (or scheduled and the time's up) and need
+-- Retrieves campaigns that are running (or scheduled and the time's up) and need
 -- to be processed. It updates the to_send count and max_subscriber_id of the campaign,
 -- that is, the total number of subscribers to be processed across all lists of a campaign.
--- Thus, it has a sideaffect.
+-- Also saves sent counts and resume checkpoints for active campaigns.
 -- In addition, it finds the max_subscriber_id, the upper limit across all lists of
 -- a campaign. This is used to fetch and slice subscribers for the campaign in next-campaign-subscribers.
 WITH camps AS (
@@ -220,9 +221,9 @@ counts AS (
     GROUP BY camps.id
 ),
 updateCounts AS (
-    WITH uc (campaign_id, sent_count) AS (SELECT * FROM unnest($1::INT[], $2::INT[]))
+    WITH uc (campaign_id, sent_count, last_sub_id) AS (SELECT * FROM unnest($1::INT[], $2::INT[], $3::INT[]))
     UPDATE campaigns
-    SET sent = sent + uc.sent_count
+    SET sent = sent + uc.sent_count, last_subscriber_id = GREATEST(campaigns.last_subscriber_id, uc.last_sub_id)
     FROM uc WHERE campaigns.id = uc.campaign_id
 ),
 u AS (
@@ -245,12 +246,8 @@ SELECT camps.*, campMedia.media_id, (
 ) AS lists FROM camps LEFT JOIN campMedia ON (campMedia.campaign_id = camps.id);
 
 -- name: get-campaign-analytics-unique-counts
-WITH intval AS (
-    -- For intervals < a week, aggregate counts hourly, otherwise daily.
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
-),
-uniqIDs AS (
-    SELECT DISTINCT ON(subscriber_id, campaign_id) subscriber_id, campaign_id, DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+WITH uniqIDs AS (
+    SELECT DISTINCT ON(subscriber_id, campaign_id) subscriber_id, campaign_id, DATE_TRUNC($4::TEXT, created_at) AS "timestamp"
     FROM %s
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3
     ORDER BY subscriber_id, campaign_id, "timestamp"
@@ -260,21 +257,13 @@ SELECT COUNT(*) AS "count", campaign_id, "timestamp"
 
 -- name: get-campaign-analytics-counts
 -- raw: true
-WITH intval AS (
-    -- For intervals < a week, aggregate counts hourly, otherwise daily.
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
-)
-SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC($4::TEXT, created_at) AS "timestamp"
     FROM %s
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3
     GROUP BY campaign_id, "timestamp" ORDER BY "timestamp" ASC;
 
 -- name: get-campaign-bounce-counts
-WITH intval AS (
-    -- For intervals < a week, aggregate counts hourly, otherwise daily.
-    SELECT CASE WHEN (EXTRACT (EPOCH FROM ($3::TIMESTAMP - $2::TIMESTAMP)) / 86400) >= 7 THEN 'day' ELSE 'hour' END
-)
-SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC((SELECT * FROM intval), created_at) AS "timestamp"
+SELECT campaign_id, COUNT(*) AS "count", DATE_TRUNC($4::TEXT, created_at) AS "timestamp"
     FROM bounces
     WHERE campaign_id=ANY($1) AND created_at >= $2 AND created_at <= $3
     GROUP BY campaign_id, "timestamp" ORDER BY "timestamp" ASC;
@@ -322,17 +311,15 @@ SELECT link_clicks.campaign_id,
 -- name: get-running-campaign
 -- Returns the metadata for a running campaign that is required by next-campaign-subscribers to retrieve
 -- a batch of campaign subscribers for processing.
-SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, last_subscriber_id, max_subscriber_id, lists.id AS list_id
+SELECT campaigns.id AS campaign_id, campaigns.type as campaign_type, max_subscriber_id, lists.id AS list_id
     FROM campaigns
     JOIN campaign_lists ON (campaign_lists.campaign_id = campaigns.id)
     JOIN lists ON (lists.id = campaign_lists.list_id)
     WHERE campaigns.id = $1 AND campaigns.status='running';
 
 -- name: next-campaign-subscribers
--- Returns a batch of subscribers in a given campaign starting from the last checkpoint
--- (last_subscriber_id). Every fetch updates the checkpoint and the sent count, which means
--- every fetch returns a new batch of subscribers until all rows are exhausted.
---
+-- Returns a batch of subscribersafter the runtime cursor ($3). last_subscriber_id is updated
+-- based on actual sends and not mere fetch.
 -- In previous versions, get-running-campaign + this was a single query spread across multiple
 -- CTEs, but despite numerous permutations and combinations, Postgres query planner simply would not use
 -- the right indexes on subscriber_lists when the JOIN or ids were referenced dynamically from campLists
@@ -354,7 +341,7 @@ subs AS (
         JOIN subscribers s ON s.id = sl.subscriber_id
         WHERE
             sl.list_id = ANY($5::INT[])
-            -- last_subscriber_id
+            -- In-memory fetch cursor.
             AND s.id > $3
              -- max_subscriber_id
             AND s.id <= $4
@@ -376,11 +363,6 @@ subs AS (
             )
         ORDER BY s.id LIMIT $6
     ) subIDs JOIN subscribers s ON (s.id = subIDs.id) ORDER BY s.id
-),
-u AS (
-    UPDATE campaigns
-    SET last_subscriber_id = (SELECT MAX(id) FROM subs), updated_at = NOW()
-    WHERE (SELECT COUNT(id) FROM subs) > 0 AND id=$1
 )
 SELECT * FROM subs;
 
@@ -449,7 +431,7 @@ INSERT INTO campaign_lists (campaign_id, list_id, list_name, subject_prefix)
 UPDATE campaigns SET
     to_send=(CASE WHEN $2 != 0 THEN $2 ELSE to_send END),
     sent=sent+$3,
-    last_subscriber_id=(CASE WHEN $4 > 0 THEN $4 ELSE last_subscriber_id END),
+    last_subscriber_id=GREATEST(last_subscriber_id, $4),
     updated_at=NOW()
 WHERE id=$1;
 
@@ -481,7 +463,10 @@ DELETE FROM campaigns c
 WHERE (
     CASE
         WHEN CARDINALITY($1::INT[]) > 0 THEN id = ANY($1)
-        ELSE $2 = '' OR TO_TSVECTOR(CONCAT(name, ' ', subject)) @@ PLAINTO_TSQUERY($2) OR CONCAT(c.name, ' ', c.subject) ILIKE $2
+        ELSE ($2 = '' OR TO_TSVECTOR(CONCAT(name, ' ', subject)) @@ PLAINTO_TSQUERY($2) OR CONCAT(c.name, ' ', c.subject) ILIKE ('%' || $2 || '%'))
+            AND (COALESCE(CARDINALITY($5::campaign_status[]), 0) = 0 OR status = ANY($5))
+            AND (COALESCE(CARDINALITY($6::VARCHAR(100)[]), 0) = 0 OR $6 <@ tags)
+            AND ($7 = '' OR type = $7::campaign_type)
     END
 )
 -- Get all campaigns or filter by permitted list IDs.
@@ -500,3 +485,9 @@ WITH view AS (
 INSERT INTO campaign_views (campaign_id, subscriber_id)
     VALUES((SELECT campaign_id FROM view), (SELECT subscriber_id FROM view));
 
+-- name: get-campaign-analytics-items
+SELECT id, name, sent FROM campaigns c
+WHERE id = ANY($1::INT[]) AND ($2 OR EXISTS (
+    SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($3::INT[])
+))
+ORDER BY ARRAY_POSITION($1::INT[], id);

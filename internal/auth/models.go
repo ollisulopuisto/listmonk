@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 	null "gopkg.in/volatiletech/null.v6"
 )
@@ -286,12 +286,12 @@ func (u *User) FilterListsByPerm(types PermType, listIDs []int) []int {
 	// If the user has full list management permission,
 	// no further checks are required.
 	if get {
-		if _, ok := u.PermissionsMap[PermListGetAll]; ok {
+		if u.HasPerm(PermListGetAll) {
 			return listIDs
 		}
 	}
 	if manage {
-		if _, ok := u.PermissionsMap[PermListManageAll]; ok {
+		if u.HasPerm(PermListManageAll) {
 			return listIDs
 		}
 	}
@@ -318,18 +318,24 @@ func (u *User) FilterListsByPerm(types PermType, listIDs []int) []int {
 
 // GetPermittedListIDs filters the given list IDs by the user's get/manage
 // permissions and returns the filtered set. Unlike `FilterListsByPerm()`, if no
-// IDs are present (empty input or 0 permitted lists), it falls back to the user's
+// IDs are requested (empty input), it falls back to the user's
 // permitted list IDs if any. This is useful for endpoints which accept a few IDs
 // or the lack of which implies "all".
-func (u *User) GetPermittedListIDs(listIDs []int) []int {
-	listIDs = u.FilterListsByPerm(PermTypeGet|PermTypeManage, listIDs)
-	if len(listIDs) == 0 {
-		if _, ok := u.PermissionsMap[PermSubscribersGetAll]; !ok {
-			if len(u.GetListIDs) > 0 {
-				return u.GetListIDs
-			}
-			return []int{-1}
+func (u *User) GetPermittedListIDs(types PermType, listIDs []int) []int {
+	if len(listIDs) > 0 {
+		if ids := u.FilterListsByPerm(types, listIDs); len(ids) > 0 {
+			return ids
 		}
+		return []int{-1}
 	}
-	return listIDs
+
+	if types&PermTypeGet != 0 && u.HasPerm(PermSubscribersGetAll) {
+		return nil
+	}
+	if all, ids := u.GetPermittedLists(types); all {
+		return nil
+	} else if len(ids) > 0 {
+		return ids
+	}
+	return []int{-1}
 }

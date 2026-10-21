@@ -9,11 +9,52 @@ import (
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
+// bouncesQueryDefaults is the allowlist of filter query params.
+var bouncesQueryDefaults = map[string]string{
+	"page":        "",
+	"per_page":    "",
+	"order_by":    "",
+	"order":       "",
+	"source":      "",
+	"type":        "",
+	"campaign_id": "",
+}
+
+// bouncesView is the admin page view for the bounces list page.
+type bouncesView struct {
+	adminView
+
+	Bounces []models.Bounce
+	Page    models.PageProps
+}
+
+// ViewBounces renders the HTML view for bounces.
+func (a *App) ViewBounces(c *echo.Context) error {
+	q := makeQuery(c.Request().URL.Query(), bouncesQueryDefaults)
+
+	campID, _ := strconv.Atoi(q.Get("campaign_id"))
+
+	// Query and fetch bounces from the DB.
+	pg := a.pg.NewFromURL(q)
+	res, total, err := a.core.QueryBounces(campID, 0, q.Get("source"), q.Get("type"), q.Get("order_by"), q.Get("order"), pg.Offset, pg.Limit)
+	if err != nil {
+		return err
+	}
+
+	data := bouncesView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.bounces"), "", "subscribers.bounces"),
+		Bounces:   res,
+		Page:      models.NewPageProps(q, total, pg.Page, pg.PerPage),
+	}
+
+	return c.Render(http.StatusOK, "admin-bounces", data)
+}
+
 // GetBounce handles retrieval of a specific bounce record by ID.
-func (a *App) GetBounce(c echo.Context) error {
+func (a *App) GetBounce(c *echo.Context) error {
 	// Fetch one bounce from the DB.
 	id := getID(c)
 	out, err := a.core.GetBounce(id)
@@ -25,10 +66,11 @@ func (a *App) GetBounce(c echo.Context) error {
 }
 
 // GetBounces handles retrieval of bounce records.
-func (a *App) GetBounces(c echo.Context) error {
+func (a *App) GetBounces(c *echo.Context) error {
 	var (
 		campID, _ = strconv.Atoi(c.QueryParam("campaign_id"))
 		source    = c.FormValue("source")
+		typ       = c.FormValue("type")
 		orderBy   = c.FormValue("order_by")
 		order     = c.FormValue("order")
 
@@ -36,7 +78,7 @@ func (a *App) GetBounces(c echo.Context) error {
 	)
 
 	// Query and fetch bounces from the DB.
-	res, total, err := a.core.QueryBounces(campID, 0, source, orderBy, order, pg.Offset, pg.Limit)
+	res, total, err := a.core.QueryBounces(campID, 0, source, typ, orderBy, order, pg.Offset, pg.Limit)
 	if err != nil {
 		return err
 	}
@@ -48,25 +90,27 @@ func (a *App) GetBounces(c echo.Context) error {
 
 	out := models.PageResults{
 		Results: res,
-		Total:   total,
-		Page:    pg.Page,
-		PerPage: pg.PerPage,
+		PageProps: models.PageProps{
+			Total:   total,
+			Page:    pg.Page,
+			PerPage: pg.PerPage,
+		},
 	}
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
 // GetSubscriberBounces retrieves a subscriber's bounce records.
-func (a *App) GetSubscriberBounces(c echo.Context) error {
+func (a *App) GetSubscriberBounces(c *echo.Context) error {
 	subID := getID(c)
 
 	// Check if the user has access to at least one of the lists on the subscriber.
-	if err := a.hasSubPerm(auth.GetUser(c), []int{subID}); err != nil {
+	if err := a.hasSubPerm(auth.GetUser(c), auth.PermTypeGet|auth.PermTypeManage, []int{subID}); err != nil {
 		return err
 	}
 
 	// Query and fetch bounces from the DB.
-	out, _, err := a.core.QueryBounces(0, subID, "", "", "", 0, 1000)
+	out, _, err := a.core.QueryBounces(0, subID, "", "", "", "", 0, 1000)
 	if err != nil {
 		return err
 	}
@@ -75,11 +119,11 @@ func (a *App) GetSubscriberBounces(c echo.Context) error {
 }
 
 // DeleteBounces handles bounce deletion of a list.
-func (a *App) DeleteBounces(c echo.Context) error {
+func (a *App) DeleteBounces(c *echo.Context) error {
 	all, _ := strconv.ParseBool(c.QueryParam("all"))
 
 	var ids []int
-	if !all {
+	if !all || len(c.QueryParams()["id"]) > 0 {
 		// There are multiple IDs in the query string.
 		res, err := parseStringIDs(c.Request().URL.Query()["id"])
 		if err != nil {
@@ -90,10 +134,16 @@ func (a *App) DeleteBounces(c echo.Context) error {
 		}
 
 		ids = res
+		all = false
+	}
+
+	campID, err := strconv.Atoi(c.QueryParam("campaign_id"))
+	if c.QueryParam("campaign_id") != "" && (err != nil || campID < 1) {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidID"))
 	}
 
 	// Delete bounces from the DB.
-	if err := a.core.DeleteBounces(ids, all); err != nil {
+	if err := a.core.DeleteBounces(ids, all, campID, c.QueryParam("source"), c.QueryParam("type")); err != nil {
 		return err
 	}
 
@@ -101,19 +151,29 @@ func (a *App) DeleteBounces(c echo.Context) error {
 }
 
 // DeleteBounce handles bounce deletion of a single bounce record.
-func (a *App) DeleteBounce(c echo.Context) error {
+func (a *App) DeleteBounce(c *echo.Context) error {
 	// Delete bounces from the DB.
 	id := getID(c)
-	if err := a.core.DeleteBounces([]int{id}, false); err != nil {
+	if err := a.core.DeleteBounces([]int{id}, false, 0, "", ""); err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
-// BlocklistBouncedSubscribers handles blocklisting of all bounced subscribers.
-func (a *App) BlocklistBouncedSubscribers(c echo.Context) error {
-	if err := a.core.BlocklistBouncedSubscribers(); err != nil {
+// BlocklistBouncedSubscribers blocklists subscribers matching bounce IDs or filters.
+func (a *App) BlocklistBouncedSubscribers(c *echo.Context) error {
+	ids, err := parseStringIDs(c.QueryParams()["id"])
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidID"))
+	}
+
+	campID, err := strconv.Atoi(c.QueryParam("campaign_id"))
+	if c.QueryParam("campaign_id") != "" && (err != nil || campID < 1) {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidID"))
+	}
+
+	if err := a.core.BlocklistBouncedSubscribers(ids, campID, c.QueryParam("source"), c.QueryParam("type")); err != nil {
 		return err
 	}
 
@@ -121,7 +181,7 @@ func (a *App) BlocklistBouncedSubscribers(c echo.Context) error {
 }
 
 // BounceWebhook handles incoming bounce webhook notifications from various providers.
-func (a *App) BounceWebhook(c echo.Context) error {
+func (a *App) BounceWebhook(c *echo.Context) error {
 	// If bounce processing is disabled, a.bounce will be nil.
 	// Return early to prevent nil pointer dereference.
 	if a.bounce == nil {
@@ -234,7 +294,7 @@ func (a *App) BounceWebhook(c echo.Context) error {
 		bs, err := a.bounce.Postmark.ProcessBounce(rawReq, c)
 		if err != nil {
 			a.log.Printf("error processing postmark notification: %v", err)
-			if _, ok := err.(*echo.HTTPError); ok {
+			if echo.StatusCode(err) != 0 {
 				return err
 			}
 
@@ -251,7 +311,7 @@ func (a *App) BounceWebhook(c echo.Context) error {
 		bs, err := a.bounce.Forwardemail.ProcessBounce(sig, rawReq)
 		if err != nil {
 			a.log.Printf("error processing forwardemail notification: %v", err)
-			if _, ok := err.(*echo.HTTPError); ok {
+			if echo.StatusCode(err) != 0 {
 				return err
 			}
 
@@ -265,7 +325,7 @@ func (a *App) BounceWebhook(c echo.Context) error {
 		bs, err := a.bounce.Lettermint.ProcessBounce(sig, rawReq)
 		if err != nil {
 			a.log.Printf("error processing lettermint notification: %v", err)
-			if _, ok := err.(*echo.HTTPError); ok {
+			if echo.StatusCode(err) != 0 {
 				return err
 			}
 

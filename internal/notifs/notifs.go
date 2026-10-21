@@ -93,7 +93,7 @@ func Notify(toEmails []string, subject, tplName string, data any, hdr textproto.
 	subject, body = utils.GetTplSubject(subject, body)
 
 	m := models.Message{
-		Messenger:   "email",
+		Messenger:   email.MessengerName,
 		ContentType: no.opt.ContentType,
 		From:        no.opt.FromEmail,
 		To:          toEmails,

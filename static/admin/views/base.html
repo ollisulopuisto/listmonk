@@ -1,0 +1,112 @@
+{{ define "admin-head-assets" }}
+	<meta name="color-scheme" content="light dark" />
+	<script>
+		// Apply the theme early to avoid white flash.
+		(function () {
+			try {
+				var t = localStorage.getItem('theme');
+				if (t) {
+					document.documentElement.style.colorScheme = t;
+				}
+			} catch (e) {}
+		})();
+	</script>
+
+	{{/* No ?v= cache-busting unlike other assets here. This is to match the same path in style.css to avoid double loading. */}}
+	<link rel="preload" href="{{ URI "/admin/static/fonts/Geist-Variable.woff2" }}" as="font" type="font/woff2" crossorigin />
+
+	<link href="{{ URI "/admin/static/oat.min.css" }}?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
+	<link href="{{ URI "/admin/static/style.css" }}?v={{ .AssetVersion }}" rel="stylesheet" type="text/css" />
+	<link href="{{ URI "/admin/custom.css" }}?v={{ .CustomAssetVersion }}" rel="stylesheet" type="text/css" />
+	<script>
+		window._LM_I18N = {{ .I18nJS }};
+		window._LM_CONFIG = {{ ToJSON .ConfigJS }};
+	</script>
+	<script src="{{ URI "/admin/custom.js" }}?v={{ .CustomAssetVersion }}" defer></script>
+
+	{{ if ne .FaviconURL "" }}
+		<link rel="icon" href="{{ .FaviconURL }}" type="image/x-icon" />
+	{{ else }}
+		<link rel="icon" href="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" type="image/png" />
+	{{ end }}
+{{ end }}
+
+{{ define "admin-header" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<title>{{ .Data.Title }} - {{ .SiteName }}</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+	{{ template "admin-head-assets" . }}
+</head>
+<body x-data="adminApp"{{ if .Data.Can "settings:get" }} data-error-events{{ end }}>
+	<div id="app" data-sidebar-layout>
+		<aside data-sidebar>
+			<header class="sidebar-branding">
+				<a href="{{ URI "/admin" }}"><img src="{{ URI "/admin/static/logo.svg" }}?v={{ .AssetVersion }}" alt="listmonk" /></a>
+			</header>
+			{{ template "admin-sidebar" . }}
+
+			<footer id="footer">
+				<span class="text-light text-8" title="Page render time">{{ .ReqDuration }}</span>
+			</footer>
+		</aside>
+
+		<main>
+			<header class="main-bar">
+				<div class="mobile-branding">
+					<button data-sidebar-toggle type="button" aria-label="Toggle sidebar menu" class="small">
+						{{ Icon "menu" }}
+					</button>
+					<a href="{{ URI "/admin" }}"><img src="{{ URI "/admin/static/favicon.png" }}?v={{ .AssetVersion }}" alt="listmonk" /></a>
+				</div>
+				{{ with .Data.Profile }}
+					<ot-dropdown>
+						<button popovertarget="user-menu" type="button" class="user-nav-button ghost small user-trigger">
+							<span class="avatar">{{ template "avatar-icon" dict "Kind" "user" "Name" (or .Name .Username) "URL" .Avatar.String }}
+							<span class="avatar-label user-label">{{ .Username }}</span></span>
+						</button>
+						<menu popover id="user-menu">
+							<a href="{{ URI "/admin/user/profile" }}" role="menuitem" class="button ghost">{{ Icon "user" }} {{ $.L.T "globals.terms.profile" }}</a>
+							<button type="button" role="menuitem" class="ghost" @click="onLogout('{{ URI "/api/logout" }}', '{{ URI "/admin/login" }}')">
+								{{ Icon "log-out" }} {{ $.L.T "globals.buttons.logout" }}
+							</button>
+							<hr />
+							<div class="theme-switch" role="group" aria-label="Theme">
+								<button type="button" class="ghost small" title="{{ $.L.T "globals.terms.system" }}" @click="setTheme('auto')" :class="{ 'is-active': theme === 'auto' }" :aria-pressed="theme === 'auto'">{{ Icon "monitor" }}</button>
+								<button type="button" class="ghost small" title="{{ $.L.T "globals.terms.light" }}" @click="setTheme('light')" :class="{ 'is-active': theme === 'light' }" :aria-pressed="theme === 'light'">{{ Icon "sun" }}</button>
+								<button type="button" class="ghost small" title="{{ $.L.T "globals.terms.dark" }}" @click="setTheme('dark')" :class="{ 'is-active': theme === 'dark' }" :aria-pressed="theme === 'dark'">{{ Icon "moon" }}</button>
+							</div>
+						</menu>
+					</ot-dropdown>
+				{{ end }}
+			</header>
+			<div class="container">
+				{{ template "admin-global-notices" . }}
+{{ end }}
+
+{{ define "admin-footer" }}
+			</div>
+		</main>
+	</div>
+	<template id="confirm-dialog-template">
+		<dialog class="confirm-dialog">
+			<div class="dialog-card content">
+				<section class="dialog-body">
+					<div data-field>
+						<p data-confirm-message></p>
+					</div>
+				</section>
+				<footer class="dialog-foot align-right">
+					<button type="button" autofocus data-variant="primary" data-confirm-ok>{{ .L.T "globals.buttons.ok" }}</button>
+					<button type="button" class="outline" data-confirm-cancel>{{ .L.T "globals.buttons.cancel" }}</button>
+				</footer>
+			</div>
+		</dialog>
+	</template>
+
+	<script type="module" src="{{ URI "/admin/static/js/main.js" }}?v={{ .AssetVersion }}" defer></script>
+</body>
+</html>
+{{ end }}

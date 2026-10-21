@@ -1,0 +1,86 @@
+{{ define "subscriber-lists" -}}
+{{- $root := .Root -}}
+{{- $canSave := .CanSave -}}
+<div class="card page-content has-table subscriptions">
+	<div class="table-wrapper">
+		<table>
+			<thead><tr>
+				<th>{{ $root.L.T "globals.terms.list" }}</th>
+				<th>{{ $root.L.T "lists.optin" }}</th>
+				<th>{{ $root.L.T "globals.fields.status" }}</th>
+				<th>{{ $root.L.T "globals.fields.createdAt" }}</th>
+				<th>{{ $root.L.T "globals.fields.updatedAt" }}</th>
+				{{- if $canSave }}<th></th>{{ end }}
+			</tr></thead>
+			<tbody>
+				{{- range $root.Data.Subscriber.ParsedLists }}
+					<tr>
+						<td>
+							{{- if .Restricted }}
+								<span class="text-light">{{ .Name }}</span>
+							{{- else }}
+								<div class="avatar">
+									{{ template "avatar-icon" dict "Kind" "list" "Name" .Name "Href" (printf "%s/%d" (URI "/admin/lists") .ID) "Title" (printf "%s %s" ($root.L.T "globals.buttons.view") .Name) }}
+									<div class="avatar-label">
+										<a href="{{ URI "/admin/lists" }}/{{ .ID }}" class="unstyled">{{ .Name }}</a>
+									</div>
+								</div>
+							{{- end }}
+						</td>
+						<td data-label="{{ $root.L.T "lists.optin" }}">
+							{{- $icon := "user-x" }}{{ if eq .Optin "double" }}{{ $icon = "user-check" }}{{ end }}
+							{{ Badge (list (Icon $icon) ($root.L.T (printf "lists.optins.%s" .Optin))) "enum" }}
+						</td>
+						<td data-label="{{ $root.L.T "globals.fields.status" }}">
+							{{- if and (eq .Optin "single") (eq .SubscriptionStatus "unconfirmed") -}}
+								<span class="text-light">&ndash;</span>
+							{{- else -}}
+								{{ Badge (list (Dot) ($root.L.T (printf "globals.terms.%s" .SubscriptionStatus))) (printf "enum status-%s" .SubscriptionStatus) }}
+							{{- end -}}
+						</td>
+						<td data-label="{{ $root.L.T "globals.fields.createdAt" }}">{{ NiceDate .SubscriptionCreatedAt }}</td>
+						<td data-label="{{ $root.L.T "globals.fields.updatedAt" }}">{{ NiceDate .SubscriptionUpdatedAt }}</td>
+						{{- if $canSave }}
+							<td class="actions align-right">
+								<ot-dropdown>
+									<button popovertarget="sub-list-{{ .ID }}" type="button" class="ghost more icon" aria-label="{{ $root.L.T "globals.buttons.more" }}">{{ Icon "more-vertical" }}</button>
+									<menu popover id="sub-list-{{ .ID }}">
+										{{- if and (eq .Optin "double") (eq .SubscriptionStatus "unconfirmed") }}
+											<button type="button" role="menuitem" class="ghost" data-testid="btn-confirm-sub" @click.prevent="onConfirmSub({{ .ID }})">{{ Icon "check-circle" }} {{ $root.L.T "globals.buttons.confirmSubscription" }}</button>
+										{{- end }}
+										{{- if eq .SubscriptionStatus "unsubscribed" }}
+											<button type="button" role="menuitem" class="ghost" data-testid="btn-resubscribe" @click.prevent="onResubscribe({{ .ID }})">{{ Icon "refresh-cw" }} {{ $root.L.T "subscribers.reSubscribe" }}</button>
+										{{- else }}
+											<button type="button" role="menuitem" class="ghost" data-testid="btn-unsubscribe" @click.prevent="onUnsubscribe({{ .ID }})">{{ Icon "user-x" }} {{ $root.L.T "globals.buttons.unsubscribe" }}</button>
+										{{- end }}
+										<button type="button" role="menuitem" class="ghost" data-variant="danger" data-testid="btn-delete-sub" @click.prevent="onDeleteSub({{ .ID }})">{{ Icon "trash-2" }} {{ $root.L.T "globals.buttons.delete" }}</button>
+									</menu>
+								</ot-dropdown>
+							</td>
+						{{- end }}
+					</tr>
+				{{- else }}
+					{{ template "empty-state" 6 }}
+				{{- end }}
+			</tbody>
+		</table>
+	</div>
+
+	{{- if $canSave }}
+		<dialog x-ref="manageDialog">
+			<form @submit.prevent="onManageLists">
+				<div class="dialog-card content">
+					<header class="dialog-head"><h4 class="dialog-title">{{ $root.L.T "subscribers.manageLists" }}</h4></header>
+					<section class="dialog-body">
+						{{ template "manage-lists-form" dict "Root" $root "Model" "manage" "ListID" "manage-lists" }}
+					</section>
+					<footer class="dialog-foot hstack gap-3 justify-end">
+						<button type="button" class="outline" @click="$refs.manageDialog.close()">{{ $root.L.T "globals.buttons.close" }}</button>
+						<button type="submit" data-variant="primary" :disabled="manage.lists.length === 0 || isLoading('subscribers')" :aria-busy="isLoading('subscribers')">{{ $root.L.T "globals.buttons.save" }}</button>
+					</footer>
+				</div>
+			</form>
+		</dialog>
+	{{- end }}
+</div>
+{{- end }}

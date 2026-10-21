@@ -1,15 +1,7 @@
-frontend/node_modules/
-frontend/.cache/
-frontend/yarn.lock
-frontend/build/
-frontend/public/static/email-builder/
-frontend/dist/
-frontend/email-builder/dist/
-email-builder/node_modules/
-email-builder/.cache/
-email-builder/yarn.lock
-email-builder/dist/
 static/public/static/altcha.umd.js
+static/admin/dist/
+docs/site/public/
+scripts/.icons/
 .vscode/
 
 config.toml

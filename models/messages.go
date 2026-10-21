@@ -3,7 +3,6 @@ package models
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	"net/textproto"
 	txttpl "text/template"
 )
@@ -69,9 +68,7 @@ type TxMessage struct {
 	// File attachments added from multi-part form data.
 	Attachments []Attachment `json:"-"`
 
-	Body       []byte             `json:"-"`
-	Tpl        *template.Template `json:"-"`
-	SubjectTpl *txttpl.Template   `json:"-"`
+	Body []byte `json:"-"`
 }
 
 func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) error {
@@ -90,7 +87,7 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 	b.Reset()
 
 	// Render alt body if it has any templating strings.
-	if m.AltBody != "" && hasTplExpr(m.AltBody) {
+	if m.AltBody != "" && HasTplExpr(m.AltBody) {
 		t, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(m.AltBody)
 		if err != nil {
 			return fmt.Errorf("error compiling alt body: %v", err)
@@ -104,17 +101,17 @@ func (m *TxMessage) Render(sub Subscriber, tpl *Template, funcs txttpl.FuncMap) 
 
 	// Was a subject provided in the message?
 	var (
-		subjTpl *txttpl.Template
+		subjTpl *tplRenderer
 		subject = m.Subject
 	)
 	if subject != "" {
-		if hasTplExpr(m.Subject) {
+		if HasTplExpr(m.Subject) {
 			// If the subject has a template string, render that.
 			s, err := txttpl.New(BaseTpl).Funcs(funcs).Parse(m.Subject)
 			if err != nil {
 				return fmt.Errorf("error compiling subject: %v", err)
 			}
-			subjTpl = s
+			subjTpl = &tplRenderer{s}
 		}
 	} else {
 		// Use the subject from the template.

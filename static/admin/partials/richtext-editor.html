@@ -1,0 +1,279 @@
+{{ define "richtext-editor" -}}
+{{- $root := .Root -}}
+{{- $L := $root.L -}}
+{{- $f := "richtext-icons.svg" -}}
+<richtext-editor {{ if .Disabled }}disabled{{ end }} @input="form.body = $event.target.value">
+	<textarea data-rte-source hidden>{{ .Body }}</textarea>
+
+	<div class="rte-toolbar" role="toolbar" aria-label="{{ $L.T "editor.toolbar" }}">
+		{{- /* History */}}
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="undo" title="{{ $L.T "globals.buttons.undo" }}" aria-label="{{ $L.T "globals.buttons.undo" }}">{{ Icon "rotate-ccw" $f }}</button>
+			<button type="button" class="ghost" data-cmd="redo" title="{{ $L.T "globals.buttons.redo" }}" aria-label="{{ $L.T "globals.buttons.redo" }}">{{ Icon "rotate-cw" $f }}</button>
+		</div>
+
+		{{- /* Block format + font size */}}
+		<div class="rte-group">
+			<ot-dropdown class="rte-blockformat">
+				<button type="button" class="ghost rte-select" popovertarget="rte-blockformat" title="{{ $L.T "editor.blockFormat" }}"><span data-rte-blocklabel>{{ $L.T "editor.paragraph" }}</span> {{ Icon "chevron-down" $f }}</button>
+				<menu popover id="rte-blockformat" class="rte-menu">
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="P">{{ $L.T "editor.paragraph" }}</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H1"><h1>{{ $L.T "editor.heading" }} 1</h1></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H2"><h2>{{ $L.T "editor.heading" }} 2</h2></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H3"><h3>{{ $L.T "editor.heading" }} 3</h3></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H4"><h4>{{ $L.T "editor.heading" }} 4</h4></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H5"><h5>{{ $L.T "editor.heading" }} 5</h5></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="H6"><h6>{{ $L.T "editor.heading" }} 6</h6></button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="BLOCKQUOTE">{{ $L.T "editor.blockquote" }}</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="block" data-value="PRE">{{ $L.T "globals.terms.code" }}</button>
+				</menu>
+			</ot-dropdown>
+
+			<ot-dropdown>
+				<button type="button" class="ghost rte-select" popovertarget="rte-fontsize" title="{{ $L.T "editor.fontSize" }}">{{ Icon "type" $f }} {{ Icon "chevron-down" $f }}</button>
+				<menu popover id="rte-fontsize" class="rte-menu">
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="10px">10</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="11px">11</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="12px">12</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="14px">14</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="15px">15</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="16px">16</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="18px">18</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="24px">24</button>
+					<button type="button" role="menuitem" class="ghost" data-cmd="fontsize" data-value="36px">36</button>
+				</menu>
+			</ot-dropdown>
+		</div>
+
+		{{- /* Inline formatting */}}
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="bold" data-format="B" title="{{ $L.T "editor.bold" }}" aria-label="{{ $L.T "editor.bold" }}">{{ Icon "bold" $f }}</button>
+			<button type="button" class="ghost" data-cmd="italic" data-format="I" title="{{ $L.T "editor.italic" }}" aria-label="{{ $L.T "editor.italic" }}">{{ Icon "italic" $f }}</button>
+			<button type="button" class="ghost" data-cmd="underline" data-format="U" title="{{ $L.T "editor.underline" }}" aria-label="{{ $L.T "editor.underline" }}">{{ Icon "underline" $f }}</button>
+			<button type="button" class="ghost" data-cmd="strikethrough" data-format="S" title="{{ $L.T "editor.strikethrough" }}" aria-label="{{ $L.T "editor.strikethrough" }}">{{ Icon "strikethrough" $f }}</button>
+
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-forecolor" title="{{ $L.T "editor.textColor" }}" aria-label="{{ $L.T "editor.textColor" }}">{{ Icon "text-color" $f }}</button>
+				<menu popover id="rte-forecolor" class="rte-colors">
+					<div class="rte-swatches" data-rte-palette="forecolor"></div>
+					<fieldset class="group rte-color-custom" data-rte-colorinput="forecolor">
+						<input type="color" name="picker" value="#000000" title="{{ $L.T "editor.textColor" }}" aria-label="{{ $L.T "editor.textColor" }}" />
+						<input type="text" name="hex" size="8" placeholder="#000000" spellcheck="false" autocapitalize="off" autocomplete="off" />
+						<button type="button" class="outline small" data-rte-act="applycolor">{{ $L.T "globals.buttons.apply" }}</button>
+					</fieldset>
+				</menu>
+			</ot-dropdown>
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-backcolor" title="{{ $L.T "editor.highlightColor" }}" aria-label="{{ $L.T "editor.highlightColor" }}">{{ Icon "highlight" $f }}</button>
+				<menu popover id="rte-backcolor" class="rte-colors">
+					<div class="rte-swatches" data-rte-palette="backcolor"></div>
+					<fieldset class="group rte-color-custom" data-rte-colorinput="backcolor">
+						<input type="color" name="picker" value="#ffff00" title="{{ $L.T "editor.highlightColor" }}" aria-label="{{ $L.T "editor.highlightColor" }}" />
+						<input type="text" name="hex" size="8" placeholder="#ffff00" spellcheck="false" autocapitalize="off" autocomplete="off" />
+						<button type="button" class="outline small" data-rte-act="applycolor">{{ $L.T "globals.buttons.apply" }}</button>
+					</fieldset>
+				</menu>
+			</ot-dropdown>
+		</div>
+
+		{{- /* Alignment */}}
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="align" data-value="left" title="{{ $L.T "editor.alignLeft" }}" aria-label="{{ $L.T "editor.alignLeft" }}">{{ Icon "align-left" $f }}</button>
+			<button type="button" class="ghost" data-cmd="align" data-value="center" title="{{ $L.T "editor.alignCenter" }}" aria-label="{{ $L.T "editor.alignCenter" }}">{{ Icon "align-center" $f }}</button>
+			<button type="button" class="ghost" data-cmd="align" data-value="right" title="{{ $L.T "editor.alignRight" }}" aria-label="{{ $L.T "editor.alignRight" }}">{{ Icon "align-right" $f }}</button>
+			<button type="button" class="ghost" data-cmd="align" data-value="justify" title="{{ $L.T "editor.alignJustify" }}" aria-label="{{ $L.T "editor.alignJustify" }}">{{ Icon "align-justify" $f }}</button>
+		</div>
+
+		{{- /* Lists + indentation */}}
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="ul" data-format="UL" title="{{ $L.T "editor.bulletList" }}" aria-label="{{ $L.T "editor.bulletList" }}">{{ Icon "list" $f }}</button>
+			<button type="button" class="ghost" data-cmd="ol" data-format="OL" title="{{ $L.T "editor.numberList" }}" aria-label="{{ $L.T "editor.numberList" }}">{{ Icon "list-ordered" $f }}</button>
+			<button type="button" class="ghost" data-cmd="outdent" title="{{ $L.T "editor.outdent" }}" aria-label="{{ $L.T "editor.outdent" }}">{{ Icon "outdent" $f }}</button>
+			<button type="button" class="ghost" data-cmd="indent" title="{{ $L.T "editor.indent" }}" aria-label="{{ $L.T "editor.indent" }}">{{ Icon "indent" $f }}</button>
+		</div>
+
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="image" title="{{ $L.T "globals.terms.image" }}" aria-label="{{ $L.T "globals.terms.image" }}">{{ Icon "image" $f }}</button>
+			<button type="button" class="ghost" data-cmd="link" title="{{ $L.T "globals.terms.link" }}" aria-label="{{ $L.T "globals.terms.link" }}">{{ Icon "link" $f }}</button>
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-tablegrid" title="{{ $L.T "globals.terms.table" }}" aria-label="{{ $L.T "globals.terms.table" }}">{{ Icon "table" $f }}</button>
+				<div popover id="rte-tablegrid" class="rte-menu rte-tablegrid">
+					<div class="rte-tablegrid-cells" data-rte-tablegrid></div>
+					<div class="rte-tablegrid-label" data-rte-tablegrid-label></div>
+				</div>
+			</ot-dropdown>
+			<button type="button" class="ghost" data-cmd="removeformat" title="{{ $L.T "editor.removeFormat" }}" aria-label="{{ $L.T "editor.removeFormat" }}">{{ Icon "remove-format" $f }}</button>
+			<button type="button" class="ghost" data-cmd="source" title="HTML" aria-label="HTML">{{ Icon "code" $f }}</button>
+		</div>
+
+		{{- /* Insert */}}
+		<div class="rte-group">
+			<button type="button" class="ghost" data-cmd="anchor" title="{{ $L.T "editor.anchor" }}" aria-label="{{ $L.T "editor.anchor" }}">{{ Icon "anchor" $f }}</button>
+			<button type="button" class="ghost" data-cmd="subscript" data-format="SUB" title="{{ $L.T "editor.subscript" }}" aria-label="{{ $L.T "editor.subscript" }}">{{ Icon "subscript" $f }}</button>
+			<button type="button" class="ghost" data-cmd="superscript" data-format="SUP" title="{{ $L.T "editor.superscript" }}" aria-label="{{ $L.T "editor.superscript" }}">{{ Icon "superscript" $f }}</button>
+
+			<button type="button" class="ghost" data-cmd="hr" title="{{ $L.T "editor.hr" }}" aria-label="{{ $L.T "editor.hr" }}">{{ Icon "minus" $f }}</button>
+
+			{{- /* Special characters popover. */}}
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-charmap" title="{{ $L.T "editor.specialChar" }}" aria-label="{{ $L.T "editor.specialChar" }}"><span aria-hidden="true">Ω</span></button>
+				<div popover id="rte-charmap" class="rte-menu rte-glyphpop"><div class="rte-grid" data-rte-charmap></div></div>
+			</ot-dropdown>
+
+			{{- /* Emoji popover. */}}
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-emoji" title="{{ $L.T "globals.terms.emoji" }}" aria-label="{{ $L.T "globals.terms.emoji" }}">{{ Icon "smile" $f }}</button>
+				<div popover id="rte-emoji" class="rte-menu rte-glyphpop"><div class="rte-grid" data-rte-emoji></div></div>
+			</ot-dropdown>
+
+			<button type="button" class="ghost" data-cmd="insert-html" title="{{ $L.T "editor.insertHTML" }}" aria-label="{{ $L.T "editor.insertHTML" }}">{{ Icon "plus-square" $f }}</button>
+		</div>
+
+		{{- /* Tools */}}
+		<div class="rte-group">
+			{{- /* Find & replace popover. */}}
+			<ot-dropdown>
+				<button type="button" class="ghost" popovertarget="rte-find" title="{{ $L.T "editor.findReplace" }}" aria-label="{{ $L.T "editor.findReplace" }}">{{ Icon "search" $f }}</button>
+				<div popover id="rte-find" class="rte-menu rte-find" data-rte-find>
+					<input type="text" name="find" placeholder="{{ $L.T "globals.buttons.find" }}" />
+					<input type="text" name="replace" placeholder="{{ $L.T "globals.fields.replaceWith" }}" />
+					<div class="hstack justify-between">
+						<label class="rte-find-opt"><input type="checkbox" name="matchcase" /> {{ $L.T "editor.matchCase" }}</label>
+						<small data-hint><span data-rte-findcount></span></small>
+					</div>
+					<div class="hstack gap-1">
+						<button type="button" class="outline small" data-rte-act="next">{{ $L.T "editor.findNext" }}</button>
+						<button type="button" class="outline small" data-rte-act="replace">{{ $L.T "globals.buttons.replace" }}</button>
+						<button type="button" class="small" data-rte-act="replaceAll">{{ $L.T "globals.buttons.replaceAll" }}</button>
+					</div>
+				</div>
+			</ot-dropdown>
+
+			<button type="button" class="ghost" data-cmd="fullscreen" title="{{ $L.T "globals.buttons.fullscreen" }}" aria-label="{{ $L.T "globals.buttons.fullscreen" }}">{{ Icon "maximize" $f }}</button>
+			<button type="button" class="ghost" data-cmd="help" title="{{ $L.T "globals.terms.help" }}" aria-label="{{ $L.T "globals.terms.help" }}">{{ Icon "help-circle" $f }}</button>
+		</div>
+
+		{{- /* Keep source code visible after the tools and before the overflow control. */}}
+
+		{{- /* Overflow: toolbar groups that don't fit on one line are relocated
+		   here by richtext-editor.js. Hidden until it has something to hold. */}}
+		<ot-dropdown class="rte-overflow" hidden>
+			<button type="button" class="ghost" popovertarget="rte-overflow-menu" title="{{ $L.T "globals.buttons.more" }}" aria-label="{{ $L.T "globals.buttons.more" }}">{{ Icon "more-vertical" $f }}</button>
+			<menu popover id="rte-overflow-menu" class="rte-overflow-menu"></menu>
+		</ot-dropdown>
+
+	</div>
+
+	<div class="rte-content" data-rte-content></div>
+
+	<div class="rte-statusbar">
+		<span data-rte-path class="rte-path"></span>
+		<span data-rte-wordcount class="rte-wordcount"></span>
+	</div>
+
+	{{- /* ===== Dialogs ===== */}}
+
+	{{- /* Link */}}
+	<dialog class="rte-dialog" data-rte-dialog="link">
+		<form method="dialog" class="dialog-card">
+			<header class="dialog-head"><h4 class="dialog-title">{{ $L.T "globals.terms.link" }}</h4></header>
+			<section class="dialog-body">
+				<div data-field><label>{{ $L.T "globals.terms.url" }}</label><input type="text" name="url" autofocus /></div>
+				<div data-field><label>{{ $L.T "globals.terms.text" }}</label><input type="text" name="text" /></div>
+				<div data-field><label>{{ $L.T "globals.fields.title" }}</label><input type="text" name="title" /></div>
+				<label data-field><input type="checkbox" name="track" /> {{ $L.T "editor.trackLink" }}</label>
+			</section>
+			<footer class="dialog-foot align-right">
+				<button type="button" class="outline" data-rte-act="unlink">{{ $L.T "editor.removeLink" }}</button>
+				<button type="button" class="outline" data-rte-act="cancel">{{ $L.T "globals.buttons.close" }}</button>
+				<button type="button" data-variant="primary" data-rte-act="submit">{{ $L.T "globals.buttons.apply" }}</button>
+			</footer>
+		</form>
+	</dialog>
+
+	{{- /* Image */}}
+	<dialog class="rte-dialog" data-rte-dialog="image">
+		<form method="dialog" class="dialog-card">
+			<header class="dialog-head"><h4 class="dialog-title">{{ $L.T "globals.terms.image" }}</h4></header>
+			<section class="dialog-body">
+				<div data-field>
+					<label>{{ $L.T "editor.source" }}</label>
+					<div class="hstack gap-2">
+						<input type="text" name="src" style="flex:1" autofocus />
+						<button type="button" class="outline" data-rte-act="browse">{{ Icon "image" $f }} {{ $L.T "globals.terms.media" }}</button>
+					</div>
+				</div>
+				<div data-field><label>{{ $L.T "editor.altText" }}</label><input type="text" name="alt" /></div>
+				<div class="hstack gap-2">
+					<div class="rte-img-dims">
+						<div data-field><label>{{ $L.T "globals.fields.width" }}</label><input type="number" name="width" min="1" step="1" inputmode="numeric" /></div>
+						<button type="button" class="ghost rte-img-lock is-active" data-rte-act="lock" aria-pressed="true" title="{{ $L.T "editor.constrain" }}" aria-label="{{ $L.T "editor.constrain" }}">{{ Icon "lock" $f }}</button>
+						<div data-field><label>{{ $L.T "globals.fields.height" }}</label><input type="number" name="height" min="1" step="1" inputmode="numeric" /></div>
+					</div>
+					<div data-field>
+						<label>{{ $L.T "editor.float" }}</label>
+						<select name="float">
+							<option value="">{{ $L.T "globals.terms.none" }}</option>
+							<option value="img-float-left">{{ $L.T "editor.floatLeft" }}</option>
+							<option value="img-float-right">{{ $L.T "editor.floatRight" }}</option>
+						</select>
+					</div>
+				</div>
+				<label data-field><input type="checkbox" name="embed" /> {{ $L.T "editor.embed" }}</label>
+			</section>
+			<footer class="dialog-foot align-right">
+				<button type="button" class="outline" data-rte-act="cancel">{{ $L.T "globals.buttons.close" }}</button>
+				<button type="button" data-variant="primary" data-rte-act="submit">{{ $L.T "globals.buttons.insert" }}</button>
+			</footer>
+		</form>
+	</dialog>
+
+	{{- /* Source code */}}
+	<dialog class="rte-dialog rte-dialog-code" data-rte-dialog="source">
+		<div class="dialog-card">
+			<header class="dialog-head"><h4 class="dialog-title">HTML</h4></header>
+			<section class="dialog-body" data-rte-code></section>
+			<footer class="dialog-foot align-right">
+				<button type="button" class="outline" data-rte-act="format">{{ $L.T "editor.formatHTML" }}</button>
+				<button type="button" class="outline" data-rte-act="cancel">{{ $L.T "globals.buttons.close" }}</button>
+				<button type="button" data-variant="primary" data-rte-act="submit">{{ $L.T "globals.buttons.save" }}</button>
+			</footer>
+		</div>
+	</dialog>
+
+	{{- /* Insert HTML */}}
+	<dialog class="rte-dialog rte-dialog-code" data-rte-dialog="insert-html">
+		<div class="dialog-card">
+			<header class="dialog-head"><h4 class="dialog-title">{{ $L.T "editor.insertHTML" }}</h4></header>
+			<section class="dialog-body" data-rte-code></section>
+			<footer class="dialog-foot align-right">
+				<button type="button" class="outline" data-rte-act="format">{{ $L.T "editor.formatHTML" }}</button>
+				<button type="button" class="outline" data-rte-act="cancel">{{ $L.T "globals.buttons.close" }}</button>
+				<button type="button" data-variant="primary" data-rte-act="submit">{{ $L.T "globals.buttons.insert" }}</button>
+			</footer>
+		</div>
+	</dialog>
+
+	{{- /* Help */}}
+	<dialog class="rte-dialog" data-rte-dialog="help">
+		<div class="dialog-card">
+			<header class="dialog-head"><h4 class="dialog-title">{{ $L.T "globals.terms.keyboardShortcuts" }}</h4></header>
+			<section class="dialog-body">
+				<table class="rte-shortcuts">
+					<tr><td>Ctrl / ⌘ + B</td><td>{{ $L.T "editor.bold" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + I</td><td>{{ $L.T "editor.italic" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + U</td><td>{{ $L.T "editor.underline" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + Z</td><td>{{ $L.T "globals.buttons.undo" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + Shift + Z</td><td>{{ $L.T "globals.buttons.redo" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + K</td><td>{{ $L.T "globals.terms.link" }}</td></tr>
+					<tr><td>Ctrl / ⌘ + S</td><td>{{ $L.T "globals.buttons.save" }}</td></tr>
+					<tr><td>F9</td><td>{{ $L.T "globals.buttons.preview" }}</td></tr>
+				</table>
+			</section>
+			<footer class="dialog-foot align-right">
+				<button type="button" class="outline" data-rte-act="cancel">{{ $L.T "globals.buttons.close" }}</button>
+			</footer>
+		</div>
+	</dialog>
+</richtext-editor>
+{{- end }}

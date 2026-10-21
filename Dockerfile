@@ -1,48 +1,15 @@
-# Stage 1: Build Frontend Dependencies
-FROM docker.io/library/node:22-alpine AS frontend-deps
-WORKDIR /app/frontend
+# Stage 1: Build SSR Frontend
+FROM oven/bun:1.4.3-alpine AS frontend-builder
+WORKDIR /app/static/admin
 
-RUN apk add --no-cache yarn
-RUN mkdir -p /app/static/public/static
-COPY frontend/package.json frontend/yarn.lock* frontend/package-lock.json* ./
-RUN --mount=type=cache,target=/usr/local/share/.cache/yarn yarn install --frozen-lockfile || yarn install
+COPY static/admin/package.json static/admin/bun.lock ./
+RUN bun install --frozen-lockfile
 
-# Stage 2: Build Email Builder Dependencies
-FROM docker.io/library/node:22-alpine AS email-builder-deps
-WORKDIR /app/frontend/email-builder
+COPY static/admin ./
+RUN bun run build
 
-RUN apk add --no-cache yarn
-COPY frontend/email-builder/package.json frontend/email-builder/yarn.lock* frontend/email-builder/package-lock.json* ./
-RUN --mount=type=cache,target=/usr/local/share/.cache/yarn yarn install --frozen-lockfile || yarn install
-
-# Stage 3: Build Assets
-FROM docker.io/library/node:22-alpine AS builder
-WORKDIR /app
-
-# Copy dependencies
-COPY --from=frontend-deps /app/frontend/node_modules ./frontend/node_modules
-COPY --from=email-builder-deps /app/frontend/email-builder/node_modules ./frontend/email-builder/node_modules
-
-# Copy source code
-COPY frontend ./frontend
-COPY static ./static
-RUN touch frontend/.gitignore
-
-# 1. Build Email Builder FIRST (as required by the main frontend build)
-WORKDIR /app/frontend/email-builder
-RUN yarn build
-
-# 2. Move Email Builder dist to the public folder of the main frontend
-WORKDIR /app
-RUN mkdir -p frontend/public/static/email-builder && \
-    cp -r frontend/email-builder/dist/* frontend/public/static/email-builder/
-
-# 3. Build App Frontend
-WORKDIR /app/frontend
-RUN yarn build
-
-# Stage 4: Build Backend
-FROM docker.io/library/golang:1.26-alpine AS backend-builder
+# Stage 2: Build Backend
+FROM golang:1.27-alpine AS backend-builder
 WORKDIR /app
 
 # Version injection
@@ -53,24 +20,27 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 
-# Copy built frontend assets (dist now contains email-builder too)
-COPY --from=builder /app/frontend/dist ./frontend/dist
+# Copy built admin dist from frontend-builder
+COPY --from=frontend-builder /app/static/admin/dist ./static/admin/dist
 
 # Build binary with version injection
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w -X 'main.calVersion=${APP_VERSION}'" cmd/*.go
+    CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w -X 'main.calVersion=${APP_VERSION}'" ./cmd
 
 # Pack static assets
 RUN /go/bin/stuffbin -a stuff -in listmonk -out listmonk \
     config.toml.sample \
     schema.sql queries:/queries permissions.json \
     static/public:/public \
+    static/admin/views:/admin/views \
+    static/admin/partials:/admin/partials \
+    static/admin/dist:/admin/static \
+    static/admin/i18n.txt:/admin/i18n.txt \
     static/email-templates \
-    frontend/dist:/admin \
     i18n:/i18n
 
-# Stage 5: Final Runtime Image
-FROM docker.io/library/alpine:latest
+# Stage 3: Final Runtime Image
+FROM alpine:latest
 WORKDIR /listmonk
 
 RUN apk --no-cache add ca-certificates tzdata shadow su-exec

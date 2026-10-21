@@ -8,11 +8,38 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/labstack/echo/v4"
+	"github.com/knadh/listmonk/models"
+	"github.com/labstack/echo/v5"
 )
 
+// maintenanceView is the admin page view for the maintenance/garbage-collection page.
+type maintenanceView struct {
+	adminView
+
+	DBSettings struct {
+		Vacuum         bool   `json:"vacuum"`
+		VacuumInterval string `json:"vacuum_cron_interval"`
+	}
+}
+
+// ViewMaintenance renders the HTML view for the maintenance page.
+func (a *App) ViewMaintenance(c *echo.Context) error {
+	s, err := a.core.GetSettings()
+	if err != nil {
+		return err
+	}
+
+	data := maintenanceView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.maintenance"), "", "settings.maintenance"),
+	}
+	data.DBSettings.Vacuum = s.MaintenanceDB.Vacuum
+	data.DBSettings.VacuumInterval = s.MaintenanceDB.VacuumInterval
+
+	return c.Render(http.StatusOK, "admin-maintenance", data)
+}
+
 // GCSubscribers garbage collects (deletes) orphaned or blocklisted subscribers.
-func (a *App) GCSubscribers(c echo.Context) error {
+func (a *App) GCSubscribers(c *echo.Context) error {
 	var (
 		typ = c.Param("type")
 
@@ -39,7 +66,7 @@ func (a *App) GCSubscribers(c echo.Context) error {
 }
 
 // GCSubscriptions garbage collects (deletes) orphaned or blocklisted subscribers.
-func (a *App) GCSubscriptions(c echo.Context) error {
+func (a *App) GCSubscriptions(c *echo.Context) error {
 	// Validate the date.
 	t, err := time.Parse(time.RFC3339, c.FormValue("before_date"))
 	if err != nil {
@@ -58,7 +85,7 @@ func (a *App) GCSubscriptions(c echo.Context) error {
 }
 
 // GCCampaignAnalytics garbage collects (deletes) campaign analytics.
-func (a *App) GCCampaignAnalytics(c echo.Context) error {
+func (a *App) GCCampaignAnalytics(c *echo.Context) error {
 
 	t, err := time.Parse(time.RFC3339, c.FormValue("before_date"))
 	if err != nil {
@@ -71,9 +98,9 @@ func (a *App) GCCampaignAnalytics(c echo.Context) error {
 			return err
 		}
 		err = a.core.DeleteCampaignLinkClicks(t)
-	case "views":
+	case models.AnalyticsTypeViews:
 		err = a.core.DeleteCampaignViews(t)
-	case "clicks":
+	case models.AnalyticsTypeClicks:
 		err = a.core.DeleteCampaignLinkClicks(t)
 	default:
 		err = echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
@@ -87,14 +114,14 @@ func (a *App) GCCampaignAnalytics(c echo.Context) error {
 }
 
 // ExportCampaignAnalytics streams campaign analytics (views or link clicks) as a CSV file.
-func (a *App) ExportCampaignAnalytics(c echo.Context) error {
+func (a *App) ExportCampaignAnalytics(c *echo.Context) error {
 	since, err := time.Parse(time.RFC3339, c.QueryParam("since"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 	}
 
 	typ := c.Param("type")
-	if typ != "views" && typ != "clicks" {
+	if typ != models.AnalyticsTypeViews && typ != models.AnalyticsTypeClicks {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidData"))
 	}
 
@@ -107,8 +134,8 @@ func (a *App) ExportCampaignAnalytics(c echo.Context) error {
 	hdr.Set("Cache-Control", "no-cache")
 
 	switch typ {
-	case "views":
-		wr.Write([]string{"campaign_id", "campaign_uuid", "campaign_name", "subscriber_id", "subscriber_uuid", "email", "subscriber_name", "created_at"})
+	case models.AnalyticsTypeViews:
+		wr.Write([]string{"campaign_id", "campaign_uuid", "campaign_name", "subscriber_id", "subscriber_uuid", "email", "subscriber_name", models.FieldCreatedAt})
 		next := a.core.ExportCampaignViews(since, a.cfg.DBBatchSize)
 		for {
 			rows, err := next()
@@ -131,8 +158,8 @@ func (a *App) ExportCampaignAnalytics(c echo.Context) error {
 			wr.Flush()
 		}
 
-	case "clicks":
-		wr.Write([]string{"campaign_id", "campaign_uuid", "campaign_name", "subscriber_id", "subscriber_uuid", "email", "subscriber_name", "url", "created_at"})
+	case models.AnalyticsTypeClicks:
+		wr.Write([]string{"campaign_id", "campaign_uuid", "campaign_name", "subscriber_id", "subscriber_uuid", "email", "subscriber_name", "url", models.FieldCreatedAt})
 		next := a.core.ExportCampaignLinkClicks(since, a.cfg.DBBatchSize)
 		for {
 			rows, err := next()

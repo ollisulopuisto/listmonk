@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +28,7 @@ import (
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/subimporter"
 	"github.com/knadh/listmonk/models"
-	"github.com/knadh/paginator"
+	"github.com/knadh/paginator/v2"
 	"github.com/knadh/stuffbin"
 )
 
@@ -55,6 +56,9 @@ type App struct {
 
 	about         about
 	fnOptinNotify func(models.Subscriber, []int) (int, error)
+
+	// Precomputed raw JSON of i18n strings for HTML admin pages.
+	adminI18nJS json.RawMessage
 
 	// Channel for passing reload signals.
 	chReload chan os.Signal
@@ -87,11 +91,10 @@ var (
 	versionString string
 	calVersion    string
 
-	// If these are set in build ldflags and static assets (*.sql, config.toml.sample. ./frontend)
-	// are not embedded (in make dist), these paths are looked up. The default values before, when not
-	// overridden by build flags, are relative to the CWD at runtime.
-	appDir      string = "."
-	frontendDir string = "frontend/dist"
+	// If this is set in build ldflags and static assets (*.sql, config.toml.sample)
+	// are not embedded (in make dist), this path is looked up. The default value, when not
+	// overridden by build flags, is relative to the CWD at runtime.
+	appDir string = "."
 )
 
 func init() {
@@ -144,18 +147,24 @@ func init() {
 	db = initDB()
 
 	// Initialize the embedded filesystem with static assets.
-	fs = initFS(appDir, frontendDir, ko.String("static-dir"), ko.String("i18n-dir"))
+	fs = initFS(appDir, ko.String("static-dir"), ko.String("i18n-dir"))
+
+	isNonFinal := isNonFinalBuild(versionString)
 
 	// Installer mode? This runs before the SQL queries are loaded and prepared
 	// as the installer needs to work on an empty DB.
 	if ko.Bool("install") {
-		// Save the version of the last listed migration.
-		install(migList[len(migList)-1].version, db, fs, !ko.Bool("yes"), ko.Bool("idempotent"))
+		// For non-final builds, record the last final version only in the DB
+		// so that ephemeral non-final builds (eg: vX-beta.1, beta.2 etc.) run
+		// everytime but don't get recorded.
+		last := len(migList) - 1
+		if isNonFinal {
+			last--
+		}
+
+		install(migList[last].version, db, fs, !ko.Bool("yes"), ko.Bool("idempotent"))
 		os.Exit(0)
 	}
-
-	// Is this a nightly build?
-	isNightly := strings.Contains(versionString, "nightly")
 
 	// Check if the DB schema is installed.
 	if ok, err := checkSchema(db); err != nil {
@@ -165,18 +174,18 @@ func init() {
 	}
 
 	if ko.Bool("upgrade") {
-		// Even on explicit upgrade runs, for nightly builds, do not record the last
+		// Even on explicit upgrade runs, for unstable builds, do not record the last
 		// migration version in the DB.
 		lo.Printf("running upgrade...")
-		upgrade(db, fs, !ko.Bool("yes"), !isNightly)
+		upgrade(db, fs, !ko.Bool("yes"), !isNonFinal)
 		os.Exit(0)
 	}
 
-	// For nightly builds, always auto-run pending migrations without
+	// For nightly, beta, and RC builds, always auto-run pending migrations without
 	// recording the last version in the DB. Migrations are idempotent, and between
-	// nightly releases, they may change multiple times.
-	if isNightly {
-		lo.Printf("auto-running all migrations for nightly %s since last major version", versionString)
+	// non-final releases, they may change multiple times.
+	if isNonFinal {
+		lo.Printf("auto-running pending migrations for non-final build %s", versionString)
 		upgrade(db, fs, false, false)
 	} else {
 		// Before the queries are prepared, see if there are pending upgrades.
@@ -255,7 +264,7 @@ func main() {
 
 	// Assign the default `email` messenger to the app.
 	for _, m := range msgrs {
-		if m.Name() == "email" {
+		if m.Name() == email.MessengerName {
 			emailMsgr = m.(*email.Emailer)
 		}
 	}
@@ -317,6 +326,9 @@ func main() {
 		// If there are no users, then the app needs to prompt for new user setup.
 		needsUserSetup: !hasUsers,
 	}
+
+	// i18n JSON string for admin HTML pages.
+	app.adminI18nJS = app.makeAdminJSI18n()
 
 	// Star the update checker.
 	if ko.Bool("app.check_updates") {

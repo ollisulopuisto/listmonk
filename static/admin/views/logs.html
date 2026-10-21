@@ -1,0 +1,32 @@
+{{ define "admin-logs" -}}
+{{ template "admin-header" . }}
+{{ template "breadcrumbs" dict "Root" . "Current" .Data.Title "Parents" (list (dict "Label" (.L.T "globals.terms.settings") "URL" (URI "/admin/settings") "CanLink" (.Data.Can "settings:get"))) }}
+{{- $d := .Data -}}
+
+<section class="logs relative" x-data="logsView">
+	<header class="page-header">
+		<h1 class="page-title">{{ .L.T "globals.terms.logs" }}</h1>
+	</header>
+
+	<div class="card page-content">
+		<div class="log-view">
+			<div class="lines" x-ref="lines">
+				<template x-for="(l, i) in lines" :key="i">
+					<span class="line">
+						<span class="timestamp" x-text="l.timestamp"></span>
+						<span class="file" x-show="l.file && l.file !== '*'" x-text="l.file + ':'"></span>
+						<span class="log-message" :class="{ error: l.message.includes('error') }" x-text="l.message"></span>
+					</span>
+				</template>
+			</div>
+		</div>
+	</div>
+</section>
+
+<script>
+	window._logs = {{ ToJSON $d.Lines }};
+</script>
+<script type="module" src="{{ URI "/admin/static/js/views/logs.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

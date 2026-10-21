@@ -5,14 +5,21 @@ import (
 	"net/http"
 
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	null "gopkg.in/volatiletech/null.v6"
 )
 
-// GetTemplates retrieves all templates.
-func (c *Core) GetTemplates(status string, noBody bool) ([]models.Template, error) {
-	out := []models.Template{}
-	if err := c.q.GetTemplates.Select(&out, 0, noBody, status); err != nil {
+// GetTemplates retrieves templates filtered by name and type.
+func (c *Core) GetTemplates(searchStr, typ string, noBody bool, orderBy, order string) ([]models.Template, error) {
+	if order == "" {
+		order = models.OrderAsc
+	}
+
+	var (
+		out            = []models.Template{}
+		queryStr, stmt = makeSearchQuery(searchStr, orderBy, order, c.q.GetTemplates, templateQuerySortFields)
+	)
+	if err := c.db.Select(&out, stmt, 0, noBody, typ, queryStr); err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.templates}", "error", pqErrMsg(err)))
 	}
@@ -22,8 +29,11 @@ func (c *Core) GetTemplates(status string, noBody bool) ([]models.Template, erro
 
 // GetTemplate retrieves a given template.
 func (c *Core) GetTemplate(id int, noBody bool) (models.Template, error) {
-	var out []models.Template
-	if err := c.q.GetTemplates.Select(&out, id, noBody, ""); err != nil {
+	var (
+		out     []models.Template
+		_, stmt = makeSearchQuery("", "", models.OrderAsc, c.q.GetTemplates, templateQuerySortFields)
+	)
+	if err := c.db.Select(&out, stmt, id, noBody, "", ""); err != nil {
 		return models.Template{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.templates}", "error", pqErrMsg(err)))
 	}

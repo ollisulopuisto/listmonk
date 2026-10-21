@@ -1,0 +1,111 @@
+{{ define "admin-list-role" -}}
+{{ template "admin-header" . }}
+{{- $crumbTitle := .L.T "users.newListRole" -}}
+{{- if not .Data.IsNew }}{{ $crumbTitle = .Data.Role.Name.String }}{{ end -}}
+{{ template "breadcrumbs" dict "Root" . "Current" $crumbTitle "Parents" (list (dict "Label" (.L.T "globals.terms.users") "URL" (URI "/admin/users") "CanLink" (.Data.Can "users:get")) (dict "Label" (.L.T "users.listRoles") "URL" (URI "/admin/users/roles/lists") "CanLink" (.Data.Can "roles:get"))) }}
+{{- $d := .Data -}}
+{{- $canManage := $d.Can "roles:manage" -}}
+{{- $listInitials := dict -}}
+{{- range $d.AllLists }}{{ $_ := set $listInitials (printf "%d" .ID) (Initials .Name) }}{{ end -}}
+{{- range $d.Role.Lists }}{{ $_ := set $listInitials (printf "%d" .ID) (Initials .Name) }}{{ end -}}
+
+<script>
+	window._role = {{ ToJSON $d.Role }};
+	window._lists = {{ ToJSON $d.AllLists }};
+</script>
+<section class="roles" x-data="roleForm({ type: 'list', isNew: {{ $d.IsNew }}, canManage: {{ $canManage }} })">
+	<header class="page-header">
+		<div class="hstack gap-1">
+			<div class="avatar avatar-title">
+				{{- if not $d.IsNew }}{{ template "avatar-icon" dict "Kind" "list-role" "Name" $d.Role.Name.String "Href" (printf "%s/%d" (URI "/admin/users/roles/lists") $d.Role.ID) "Title" (printf "%s %s" ($.L.T "globals.buttons.view") $d.Role.Name.String) }}{{ end }}
+				<h1 class="page-title avatar-label">
+					{{- if not $d.IsNew }}{{ $d.Role.Name.String }}{{ else }}{{ .L.T "users.newListRole" }}{{ end -}}
+				</h1>
+			</div>
+		</div>
+	</header>
+
+	<form method="post" @submit.prevent="onSubmit">
+		<div class="page-content content">
+			<fieldset class="card">
+				<legend>{{ .L.Tc "users.listRole" 1 }}</legend>
+				<label data-field>
+					{{ .L.T "globals.fields.name" }}
+					<input name="name" maxlength="200" autofocus required :disabled="disabled" x-model="form.name" />
+				</label>
+			</fieldset>
+
+			<fieldset class="card">
+				<legend>{{ .L.T "globals.terms.lists" }}</legend>
+				<div data-field>
+					<label>{{ .L.T "globals.terms.list" }}</label>
+					<fieldset class="group">
+						<select aria-label="{{ .L.Tc "globals.terms.list" 1 }}" x-model.number="form.curList" :disabled="disabled || filteredLists.length < 1">
+							<template x-for="l in filteredLists" :key="l.id">
+								<option :value="l.id" x-text="l.name"></option>
+							</template>
+						</select>
+						<button type="button" class="outline" data-testid="btn-add-list" @click="onAddListPerm" :disabled="disabled || !form.curList">{{ .L.T "globals.buttons.add" }}</button>
+					</fieldset>
+				</div>
+
+				<table x-data="{ listInitials: {{ ToJSON $listInitials }} }">
+					<thead>
+						<tr>
+							<th width="50%">{{ .L.Tc "globals.terms.list" 1 }}</th>
+							<th width="20%">{{ .L.T "globals.terms.permissions" }}</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						<template x-for="l in form.lists" :key="l.id">
+							<tr>
+								<td>
+									<div class="avatar">
+										<a :href="`{{ URI "/admin/lists" }}/${l.id}`" class="unstyled avatar-icon avatar-list" :title="l.name" :aria-label="l.name"><span class="avatar-initials" aria-hidden="true" x-text="listInitials[l.id]"></span></a>
+										<div class="avatar-label">
+											<a :href="`{{ URI "/admin/lists" }}/${l.id}`" class="unstyled" x-text="l.name"></a>
+										</div>
+									</div>
+								</td>
+								<td>
+									<div class="hstack gap-3">
+										<label><input type="checkbox" value="list:get" x-model="l.permissions" :disabled="disabled" /> {{ .L.T "globals.buttons.view" }}</label>
+										<label><input type="checkbox" value="list:manage" x-model="l.permissions" :disabled="disabled" /> {{ .L.T "globals.buttons.manage" }}</label>
+									</div>
+								</td>
+								<td class="actions align-right">
+									<button type="button" class="ghost icon" data-variant="danger" :disabled="disabled" @click="onDeleteListPerm(l.id)" :aria-label="`{{ .L.T "globals.buttons.delete" }} ${l.name}`">{{ Icon "trash-2" }}</button>
+								</td>
+							</tr>
+						</template>
+						<template x-if="form.lists.length === 0">
+							{{ template "empty-state" 3 }}
+						</template>
+					</tbody>
+				</table>
+			</fieldset>
+
+			<footer class="hstack justify-between mt-6">
+				<div class="hstack gap-3">
+					{{- if not $d.IsNew }}
+						<button type="button" class="small" data-variant="secondary" title="{{ .L.T "globals.messages.clickToCopy" }}" aria-label="{{ .L.T "globals.fields.id" }}" @click="copyToClipboard(form.id)">
+							<strong>{{ .L.T "globals.fields.id" }}</strong> <span x-text="form.id"></span>
+						</button>
+					{{- end }}
+					<a href="https://listmonk.app/docs/roles-and-permissions" target="_blank" rel="noopener noreferrer" class="text-light text-8">
+						{{ Icon "link-2" }} {{ .L.T "globals.buttons.learnMore" }}
+					</a>
+				</div>
+				<div class="hstack gap-3 justify-end">
+					<button type="submit" data-variant="primary" data-testid="btn-save" x-show="!disabled" :disabled="isLoading('roles.save')" :aria-busy="isLoading('roles.save')">{{ .L.T "globals.buttons.save" }}</button>
+				</div>
+			</footer>
+		</div>
+	</form>
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/roles.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

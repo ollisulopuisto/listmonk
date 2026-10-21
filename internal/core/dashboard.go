@@ -4,12 +4,16 @@ import (
 	"net/http"
 
 	"github.com/jmoiron/sqlx/types"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // GetDashboardCharts returns chart data points to render on the dashboard.
-// If listID > 0, stats for that specific list are returned (aggregated from campaigns sent to that list).
-func (c *Core) GetDashboardCharts(listID int) (types.JSONText, error) {
+// If listIDs is provided and listID > 0, stats for that specific list are returned (aggregated from campaigns sent to that list).
+func (c *Core) GetDashboardCharts(listIDs ...int) (types.JSONText, error) {
+	listID := 0
+	if len(listIDs) > 0 {
+		listID = listIDs[0]
+	}
 	var out types.JSONText
 
 	if listID > 0 {
@@ -73,8 +77,12 @@ func (c *Core) GetDashboardCharts(listID int) (types.JSONText, error) {
 }
 
 // GetDashboardCounts returns stats counts to show on the dashboard.
-// If listID > 0, stats for that specific list are returned.
-func (c *Core) GetDashboardCounts(listID int) (types.JSONText, error) {
+// If listIDs is provided and listID > 0, stats for that specific list are returned.
+func (c *Core) GetDashboardCounts(listIDs ...int) (types.JSONText, error) {
+	listID := 0
+	if len(listIDs) > 0 {
+		listID = listIDs[0]
+	}
 	var out types.JSONText
 
 	if listID > 0 {

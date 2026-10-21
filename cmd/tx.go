@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	"github.com/knadh/listmonk/internal/manager"
+	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // SendTxMessage handles the sending of a transactional message.
-func (a *App) SendTxMessage(c echo.Context) error {
+func (a *App) SendTxMessage(c *echo.Context) error {
 	var m models.TxMessage
 
 	// If it's a multipart form, there may be file attachments.
@@ -238,7 +239,7 @@ func (a *App) validateTxMessage(m models.TxMessage) (models.TxMessage, error) {
 	}
 
 	if m.Messenger == "" {
-		m.Messenger = emailMsgr
+		m.Messenger = email.MessengerName
 	} else if !a.manager.HasMessenger(m.Messenger) {
 		return m, echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("campaigns.fieldInvalidMessenger", "name", m.Messenger))
 	}
