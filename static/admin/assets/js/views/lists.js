@@ -18,6 +18,7 @@ function component(list = null) {
     optin: 'single',
     status: 'active',
     tags: [],
+    subject_prefix: '',
     description: '',
   });
   const makeFormFromList = (list) => ({
@@ -103,6 +104,7 @@ function component(list = null) {
         optin: this.form.optin,
         status: this.form.status,
         tags: this.form.tags,
+        subject_prefix: this.form.subject_prefix || '',
         description: this.form.description || '',
       };
     },

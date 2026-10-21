@@ -17,8 +17,9 @@
 				<div class="text-small text-light mt-2">{{ NiceDate $l.CreatedAt }}</div>
 			</div>
 			<div class="col-9">
-				{{ if or $l.Description $l.Tags }}
+				{{ if or $l.Description $l.Tags $l.SubjectPrefix }}
 				<p class="text-small text-light mb-2">
+					{{ if $l.SubjectPrefix }}<span class="tag" title="{{ $.L.T "lists.subjectPrefix" }}">{{ $l.SubjectPrefix }}</span> {{ end }}
 					{{ $l.Description }}
 					{{ range $l.Tags }} <a href="{{ URI "/admin/lists" }}?tag={{ . }}" class="tag" title="{{ $.L.T "globals.buttons.filter" }} {{ . }}">#{{ . }}</a>{{ end }}
 				</p>

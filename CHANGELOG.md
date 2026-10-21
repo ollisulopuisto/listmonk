@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.10.21.2388] - 2026-10-21
+
+### Added
+- Frontend: Wired list `subject_prefix` into Alpine.js form handler (`lists.js`) and list details view (`list-info.html`) for listmonk v7 SSR admin interface.
+
 ## [v26.10.21.2387] - 2026-10-21
 
 ### Changed
