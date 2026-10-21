@@ -73,6 +73,8 @@ CREATE TABLE subscriber_lists (
 DROP INDEX IF EXISTS idx_sub_lists_sub_id; CREATE INDEX idx_sub_lists_sub_id ON subscriber_lists(subscriber_id);
 DROP INDEX IF EXISTS idx_sub_lists_list_id; CREATE INDEX idx_sub_lists_list_id ON subscriber_lists(list_id);
 DROP INDEX IF EXISTS idx_sub_lists_status; CREATE INDEX idx_sub_lists_status ON subscriber_lists(status);
+CREATE INDEX IF NOT EXISTS idx_sub_lists_created_at ON subscriber_lists(created_at);
+CREATE INDEX IF NOT EXISTS idx_sub_lists_unsubscribed_updated_at ON subscriber_lists(updated_at) WHERE status = 'unsubscribed';
 
 -- templates
 DROP TABLE IF EXISTS templates CASCADE;
@@ -232,7 +234,7 @@ INSERT INTO settings (key, value) VALUES
     ('app.site_name', '"Mailing list"'),
     ('app.root_url', '"http://localhost:9000"'),
     ('app.favicon_url', '""'),
-    ('app.from_email', '"listmonk <noreply@listmonk.yoursite.com>"'),
+    ('app.from_email', '["listmonk <noreply@listmonk.yoursite.com>"]'),
     ('app.campaign_subject_prefix', '""'),
     ('app.logo_url', '""'),
     ('app.concurrency', '10'),
@@ -264,8 +266,9 @@ INSERT INTO settings (key, value) VALUES
     ('privacy.domain_allowlist', '[]'),
     ('privacy.record_optin_ip', 'false'),
     ('security.captcha', '{"altcha": {"enabled": false, "complexity": 300000}, "hcaptcha": {"enabled": false, "key": "", "secret": ""}}'),
-    ('security.oidc', '{"enabled": false, "provider_url": "", "provider_name": "", "client_id": "", "client_secret": "", "auto_create_users": false, "default_user_role_id": null, "default_list_role_id": null}'),
+    ('security.oidc', '{"enabled": false, "provider_url": "", "provider_name": "", "client_id": "", "client_secret": "", "auto_create_users": false, "logout": false, "default_user_role_id": null, "default_list_role_id": null, "roles": []}'),
     ('security.trusted_urls', '[]'),
+    ('security.session_duration', '"7d"'),
     ('upload.provider', '"filesystem"'),
     ('upload.max_file_size', '5000'),
     ('upload.extensions', '["jpg","jpeg","png","gif","svg","*"]'),
@@ -282,8 +285,8 @@ INSERT INTO settings (key, value) VALUES
     ('upload.s3.bucket_type', '"public"'),
     ('upload.s3.expiry', '"167h"'),
     ('smtp',
-        '[{"enabled":true, "host":"smtp.yoursite.com","port":25,"auth_protocol":"cram","username":"username","password":"password","hello_hostname":"","max_conns":10,"idle_timeout":"15s","wait_timeout":"5s","max_msg_retries":2,"msg_retry_delay":"10ms","tls_type":"STARTTLS","tls_skip_verify":false,"email_headers":[], "from_addresses":[]},
-          {"enabled":false, "host":"smtp.gmail.com","port":465,"auth_protocol":"login","username":"username@gmail.com","password":"password","hello_hostname":"","max_conns":10,"idle_timeout":"15s","wait_timeout":"5s","max_msg_retries":2,"msg_retry_delay":"10ms","tls_type":"TLS","tls_skip_verify":false,"email_headers":[], "from_addresses":[]}]'),
+        '[{"enabled":true, "exclude_from_default":false, "host":"smtp.yoursite.com","port":25,"auth_protocol":"cram","username":"username","password":"password","hello_hostname":"","max_conns":10,"idle_timeout":"15s","wait_timeout":"5s","max_msg_retries":2,"msg_retry_delay":"10ms","tls_type":"STARTTLS","tls_skip_verify":false,"email_headers":[], "from_addresses":[]},
+          {"enabled":false, "exclude_from_default":false, "host":"smtp.gmail.com","port":465,"auth_protocol":"login","username":"username@gmail.com","password":"password","hello_hostname":"","max_conns":10,"idle_timeout":"15s","wait_timeout":"5s","max_msg_retries":2,"msg_retry_delay":"10ms","tls_type":"TLS","tls_skip_verify":false,"email_headers":[], "from_addresses":[]}]'),
     ('messengers', '[]'),
     ('bounce.enabled', 'false'),
     ('bounce.webhooks_enabled', 'false'),
@@ -446,3 +449,37 @@ CREATE MATERIALIZED VIEW mat_list_subscriber_stats AS
     UNION ALL
     SELECT NOW() AS updated_at, 0 AS list_id, NULL AS status, COUNT(id) AS subscriber_count FROM subscribers;
 DROP INDEX IF EXISTS mat_list_subscriber_stats_idx; CREATE UNIQUE INDEX mat_list_subscriber_stats_idx ON mat_list_subscriber_stats (list_id, status);
+
+-- Weekly list charts for the latest three months.
+DROP MATERIALIZED VIEW IF EXISTS mat_list_charts;
+CREATE MATERIALIZED VIEW mat_list_charts AS
+    WITH views AS (
+        SELECT campaign_id, DATE_TRUNC('week', created_at)::DATE AS date, COUNT(*) AS count
+        FROM campaign_views
+        WHERE created_at >= CURRENT_DATE - INTERVAL '3 months' AND created_at <= NOW()
+        GROUP BY campaign_id, date
+    ), counts AS (
+        SELECT list_id, DATE_TRUNC('week', created_at)::DATE AS date,
+               COUNT(*) AS subscriptions, 0::BIGINT AS unsubscriptions, 0::BIGINT AS campaign_views
+        FROM subscriber_lists
+        WHERE created_at >= CURRENT_DATE - INTERVAL '3 months' AND created_at <= NOW()
+        GROUP BY list_id, date
+        UNION ALL
+        SELECT list_id, DATE_TRUNC('week', updated_at)::DATE AS date,
+               0::BIGINT, COUNT(*), 0::BIGINT
+        FROM subscriber_lists
+        WHERE status = 'unsubscribed'
+            AND updated_at >= CURRENT_DATE - INTERVAL '3 months' AND updated_at <= NOW()
+        GROUP BY list_id, date
+        UNION ALL
+        SELECT cl.list_id, v.date, 0::BIGINT, 0::BIGINT, SUM(v.count)::BIGINT
+        FROM views v JOIN campaign_lists cl ON cl.campaign_id = v.campaign_id
+        WHERE cl.list_id IS NOT NULL
+        GROUP BY cl.list_id, v.date
+    )
+    SELECT list_id, date, SUM(subscriptions)::BIGINT AS subscriptions,
+           SUM(unsubscriptions)::BIGINT AS unsubscriptions,
+           SUM(campaign_views)::BIGINT AS campaign_views
+    FROM counts
+    GROUP BY list_id, date;
+CREATE UNIQUE INDEX mat_list_charts_idx ON mat_list_charts (list_id, date);

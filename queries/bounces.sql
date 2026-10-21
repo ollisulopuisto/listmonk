@@ -39,6 +39,7 @@ SELECT COUNT(*) OVER () AS total,
     bounces.subscriber_id,
     subscribers.uuid AS subscriber_uuid,
     subscribers.email AS email,
+    subscribers.name AS subscriber_name,
     subscribers.status as subscriber_status,
     (
         CASE WHEN bounces.campaign_id IS NOT NULL
@@ -52,10 +53,15 @@ WHERE ($1 = 0 OR bounces.id = $1)
     AND ($2 = 0 OR bounces.campaign_id = $2)
     AND ($3 = 0 OR bounces.subscriber_id = $3)
     AND ($4 = '' OR bounces.source = $4)
-ORDER BY %order% OFFSET $5 LIMIT (CASE WHEN $6 < 1 THEN NULL ELSE $6 END);
+    AND ($5 = '' OR bounces.type = $5::bounce_type)
+ORDER BY %order% OFFSET $6 LIMIT (CASE WHEN $7 < 1 THEN NULL ELSE $7 END);
 
 -- name: delete-bounces
-DELETE FROM bounces WHERE $2 = TRUE OR id = ANY($1);
+DELETE FROM bounces WHERE CASE WHEN $2 THEN
+    ($3 = 0 OR campaign_id = $3)
+    AND ($4 = '' OR source = $4)
+    AND ($5 = '' OR type = $5::bounce_type)
+ELSE id = ANY($1) END;
 
 -- name: delete-bounces-by-subscriber
 WITH sub AS (
@@ -66,6 +72,11 @@ DELETE FROM bounces WHERE subscriber_id = (SELECT id FROM sub);
 -- name: blocklist-bounced-subscribers
 WITH subs AS (
     SELECT subscriber_id FROM bounces
+    WHERE CASE WHEN CARDINALITY($1::INT[]) > 0 THEN id = ANY($1)
+    ELSE ($2 = 0 OR campaign_id = $2)
+        AND ($3 = '' OR source = $3)
+        AND ($4 = '' OR type = $4::bounce_type)
+    END
 ),
 b AS (
     UPDATE subscribers SET status='blocklisted', updated_at=NOW()

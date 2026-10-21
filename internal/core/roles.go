@@ -5,14 +5,22 @@ import (
 	"net/http"
 
 	"github.com/knadh/listmonk/internal/auth"
-	"github.com/labstack/echo/v4"
+	"github.com/knadh/listmonk/models"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 )
 
 // GetRoles retrieves all roles.
-func (c *Core) GetRoles() ([]auth.Role, error) {
-	out := []auth.Role{}
-	if err := c.q.GetUserRoles.Select(&out, nil); err != nil {
+func (c *Core) GetRoles(searchStr, orderBy, order string) ([]auth.Role, error) {
+	if order == "" {
+		order = models.OrderAsc
+	}
+
+	var (
+		out            = []auth.Role{}
+		queryStr, stmt = makeSearchQuery(searchStr, orderBy, order, c.q.GetUserRoles, roleQuerySortFields)
+	)
+	if err := c.db.Select(&out, stmt, 0, queryStr); err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "role", "error", pqErrMsg(err)))
 	}
@@ -23,7 +31,8 @@ func (c *Core) GetRoles() ([]auth.Role, error) {
 // GetRole retrieves a role.
 func (c *Core) GetRole(id int) (auth.Role, error) {
 	out := []auth.Role{}
-	if err := c.q.GetUserRoles.Select(&out, id); err != nil {
+	_, stmt := makeSearchQuery("", "", models.OrderAsc, c.q.GetUserRoles, roleQuerySortFields)
+	if err := c.db.Select(&out, stmt, id, ""); err != nil {
 		return auth.Role{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "role", "error", pqErrMsg(err)))
 	}
@@ -38,9 +47,16 @@ func (c *Core) GetRole(id int) (auth.Role, error) {
 }
 
 // GetListRoles retrieves all list roles.
-func (c *Core) GetListRoles() ([]auth.ListRole, error) {
-	out := []auth.ListRole{}
-	if err := c.q.GetListRoles.Select(&out); err != nil {
+func (c *Core) GetListRoles(searchStr, orderBy, order string) ([]auth.ListRole, error) {
+	if order == "" {
+		order = models.OrderAsc
+	}
+
+	var (
+		out            = []auth.ListRole{}
+		queryStr, stmt = makeSearchQuery(searchStr, orderBy, order, c.q.GetListRoles, roleQuerySortFields)
+	)
+	if err := c.db.Select(&out, stmt, queryStr); err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "role", "error", pqErrMsg(err)))
 	}
@@ -65,7 +81,7 @@ func (c *Core) CreateRole(r auth.Role) (auth.Role, error) {
 
 	if err := c.q.CreateRole.Get(&out, r.Name, auth.RoleTypeUser, pq.Array(r.Permissions)); err != nil {
 		return out, echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorCreating", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	return out, nil
@@ -77,12 +93,12 @@ func (c *Core) CreateListRole(r auth.ListRole) (auth.ListRole, error) {
 
 	if err := c.q.CreateRole.Get(&out, r.Name, auth.RoleTypeList, pq.Array([]string{})); err != nil {
 		return out, echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorCreating", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	if err := c.UpsertListPermissions(out.ID, r.Lists); err != nil {
 		return out, echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorCreating", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	return out, nil
@@ -110,7 +126,7 @@ func (c *Core) UpsertListPermissions(roleID int, lp []auth.ListPermission) error
 
 	if _, err := c.q.UpsertListPermissions.Exec(roleID, pq.Array(listIDs), pq.Array(listPerms)); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorCreating", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	return nil
@@ -123,7 +139,7 @@ func (c *Core) DeleteListPermission(roleID, listID int) error {
 			return echo.NewHTTPError(http.StatusBadRequest, c.i18n.T("users.cantDeleteRole"))
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	return nil
@@ -173,7 +189,7 @@ func (c *Core) DeleteRole(id int) error {
 			return echo.NewHTTPError(http.StatusBadRequest, c.i18n.T("users.cantDeleteRole"))
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{users.role}", "error", pqErrMsg(err)))
+			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.role}", "error", pqErrMsg(err)))
 	}
 
 	return nil

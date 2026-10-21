@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/knadh/listmonk/internal/i18n"
@@ -548,8 +549,20 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 		// Iterate the key map and based on the indices mapped earlier,
 		// form a map of key: csv_value, eg: email: user@user.com.
 		row := make(map[string]string, lnCols)
+		valid := true
 		for key := range hdrKeys {
-			row[key] = cols[hdrKeys[key]]
+			v := cols[hdrKeys[key]]
+
+			// Skip lines with invalid UTF-8 or NUL chars.
+			if !utf8.ValidString(v) || strings.ContainsRune(v, 0) {
+				valid = false
+				break
+			}
+			row[key] = v
+		}
+		if !valid {
+			s.log.Printf("skipping line %d: %s: %v", i, s.im.i18n.Ts("globals.messages.invalidFields", "name", "non-UTF8 encoding"), cols)
+			continue
 		}
 
 		sub := SubReq{}
@@ -611,7 +624,7 @@ func (im *Importer) Stop() {
 func (im *Importer) SanitizeEmail(email string) (string, error) {
 	addr, err := utils.SanitizeEmail(email)
 	if err != nil {
-		return "", errors.New(im.i18n.T("subscribers.invalidEmail"))
+		return "", errors.New(im.i18n.T("globals.messages.invalidEmail"))
 	}
 
 	// Check if the e-mail's domain is blocklisted. The e-mail domain and blocklist config
@@ -642,7 +655,7 @@ func (im *Importer) SanitizeEmail(email string) (string, error) {
 // ValidateFields validates incoming subscriber field values and returns sanitized fields.
 func (im *Importer) ValidateFields(s SubReq) (SubReq, error) {
 	if len(s.Email) > 1000 {
-		return s, errors.New(im.i18n.T("subscribers.invalidEmail"))
+		return s, errors.New(im.i18n.T("globals.messages.invalidEmail"))
 	}
 
 	em, err := im.SanitizeEmail(s.Email)

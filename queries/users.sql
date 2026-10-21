@@ -51,7 +51,7 @@ UPDATE users SET
 WITH u AS (
     SELECT COUNT(*) AS num FROM users WHERE NOT(id = ANY($1)) AND user_role_id=1 AND type='user' AND status='enabled'
 )
-DELETE FROM users WHERE id = ALL($1) AND (SELECT num FROM u) > 0;
+DELETE FROM users WHERE id = ANY($1) AND (SELECT num FROM u) > 0;
 
 -- name: get-users
 WITH ur AS (
@@ -89,7 +89,11 @@ FROM users
     LEFT JOIN ur ON users.user_role_id = ur.id
     LEFT JOIN lp ON users.list_role_id = lp.list_role_id
     LEFT JOIN lr ON lp.list_role_id = lr.id
-    ORDER BY users.created_at;
+    WHERE ($1 = '' OR users.type = $1::user_type)
+        AND ($2 = '' OR users.status = $2::user_status)
+        AND ($3 = 0 OR users.user_role_id = $3)
+        AND ($4 = 0 OR users.list_role_id = $4)
+    ORDER BY %order%;
 
 -- name: get-user
 WITH sel AS (
@@ -152,7 +156,7 @@ UPDATE users SET name=$2, email=(CASE WHEN password_login THEN $3 ELSE email END
     WHERE id=$1;
 
 -- name: update-user-login
-UPDATE users SET loggedin_at=NOW(), avatar=(CASE WHEN $2 != '' THEN $2 ELSE avatar END) WHERE id=$1;
+UPDATE users SET loggedin_at=NOW(), avatar=NULLIF($2, '') WHERE id=$1;
 
 -- name: set-user-twofa
 UPDATE users SET twofa_type=$2::twofa_type, twofa_key=$3, updated_at=NOW() WHERE id=$1;

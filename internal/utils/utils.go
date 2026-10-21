@@ -92,3 +92,12 @@ func GetTplSubject(subject string, body []byte) (string, []byte) {
 
 	return strings.TrimSpace(string(m[1])), reTitle.ReplaceAll(body, []byte(""))
 }
+
+// NilToSlice returns an empty slice if s is nil, otherwise s unchanged.
+func NilToSlice[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+
+	return s
+}

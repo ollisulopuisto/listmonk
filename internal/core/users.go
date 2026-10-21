@@ -8,14 +8,23 @@ import (
 
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/utils"
-	"github.com/labstack/echo/v4"
+	"github.com/knadh/listmonk/models"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 	"gopkg.in/volatiletech/null.v6"
 )
 
-func (c *Core) GetUsers() ([]auth.User, error) {
-	out := []auth.User{}
-	if err := c.q.GetUsers.Select(&out); err != nil {
+// GetUsers retrieves users.
+func (c *Core) GetUsers(typ, status string, userRoleID, listRoleID int, orderBy, order string) ([]auth.User, error) {
+	if order == "" {
+		order = models.OrderAsc
+	}
+
+	var (
+		out     = []auth.User{}
+		_, stmt = makeSearchQuery("", orderBy, order, c.q.GetUsers, userQuerySortFields)
+	)
+	if err := c.db.Select(&out, stmt, typ, status, userRoleID, listRoleID); err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.users}", "error", pqErrMsg(err)))
 	}

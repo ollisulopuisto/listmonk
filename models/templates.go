@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"html/template"
+	"io"
 	txttpl "text/template"
 	"time"
 
@@ -17,6 +18,17 @@ const (
 	TemplateTypeTx             = "tx"
 )
 
+// tplRenderer exposes only execution and hides other unrelated methods.
+type tplRenderer struct {
+	tpl interface {
+		ExecuteTemplate(io.Writer, string, any) error
+	}
+}
+
+func (t *tplRenderer) ExecuteTemplate(w io.Writer, name string, data any) error {
+	return t.tpl.ExecuteTemplate(w, name, data)
+}
+
 // Template represents a reusable e-mail template.
 type Template struct {
 	Base
@@ -30,9 +42,9 @@ type Template struct {
 	IsDefault  bool        `db:"is_default" json:"is_default"`
 
 	// Only relevant to tx (transactional) templates.
-	SubjectTpl  *txttpl.Template   `json:"-"`
-	Tpl         *template.Template `json:"-"`
-	Attachments []Attachment       `json:"-"`
+	SubjectTpl  *tplRenderer `json:"-"`
+	Tpl         *tplRenderer `json:"-"`
+	Attachments []Attachment `json:"-"`
 }
 
 // Compile compiles a template body and subject (only for tx templates) and
@@ -42,17 +54,17 @@ func (t *Template) Compile(f template.FuncMap) error {
 	if err != nil {
 		return fmt.Errorf("error compiling transactional template: %v", err)
 	}
-	t.Tpl = tpl
+	t.Tpl = &tplRenderer{tpl}
 
 	// If the subject line has a template string, compile it.
-	if hasTplExpr(t.Subject) {
+	if HasTplExpr(t.Subject) {
 		subj := t.Subject
 
-		subjTpl, err := txttpl.New(BaseTpl).Funcs(txttpl.FuncMap(f)).Parse(subj)
+		subjTpl, err := txttpl.New(BaseTpl).Funcs(f).Parse(subj)
 		if err != nil {
 			return fmt.Errorf("error compiling subject: %v", err)
 		}
-		t.SubjectTpl = subjTpl
+		t.SubjectTpl = &tplRenderer{subjTpl}
 	}
 
 	return nil
@@ -69,7 +81,15 @@ type CampaignStats struct {
 	NetRate   int       `json:"net_rate"`
 }
 
+// AnalyticsItem is the minimal campaign or list metadata used by analytics.
+type AnalyticsItem struct {
+	ID   int    `db:"id" json:"id"`
+	Name string `db:"name" json:"name"`
+	Sent int    `db:"sent" json:"sent"`
+}
+
 type CampaignAnalyticsCount struct {
+	ListID     int       `db:"list_id" json:"list_id,omitempty"`
 	CampaignID int       `db:"campaign_id" json:"campaign_id"`
 	Count      int       `db:"count" json:"count"`
 	Timestamp  time.Time `db:"timestamp" json:"timestamp"`

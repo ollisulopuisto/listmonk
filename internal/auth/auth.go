@@ -7,32 +7,37 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/zerodha/simplesessions/stores/postgres/v3"
 	"github.com/zerodha/simplesessions/v3"
 	"golang.org/x/oauth2"
 )
 
 type OIDCclaim struct {
-	Email             string `json:"email"`
-	EmailVerified     bool   `json:"email_verified"`
-	Sub               string `json:"sub"`
-	Picture           string `json:"picture"`
-	Name              string `json:"name"`
-	PreferredUsername string `json:"preferred_username"`
+	Email             string                     `json:"email"`
+	EmailVerified     bool                       `json:"email_verified"`
+	Sub               string                     `json:"sub"`
+	Picture           string                     `json:"picture"`
+	Name              string                     `json:"name"`
+	PreferredUsername string                     `json:"preferred_username"`
+	RawClaims         map[string]json.RawMessage `json:"-"`
 }
 
 type OIDCConfig struct {
 	Enabled           bool   `json:"enabled"`
+	Logout            bool   `json:"logout"`
 	ProviderURL       string `json:"provider_url"`
 	RedirectURL       string `json:"redirect_url"`
 	ClientID          string `json:"client_id"`
@@ -49,8 +54,9 @@ type BasicAuthConfig struct {
 }
 
 type Config struct {
-	OIDC      OIDCConfig
-	BasicAuth BasicAuthConfig
+	OIDC            OIDCConfig
+	BasicAuth       BasicAuthConfig
+	SessionDuration time.Duration
 }
 
 // Callbacks takes two callback functions required by simplesessions.
@@ -72,12 +78,19 @@ type Auth struct {
 	sessStore *postgres.Store
 	cb        *Callbacks
 	log       *log.Logger
+
+	// Whether the OIDC provider supports PKCE with the S256 challenge method.
+	pkce bool
 }
 
 var sessPruneInterval = time.Hour * 12
 
 // New returns an initialize Auth instance.
 func New(cfg Config, db *sql.DB, cb *Callbacks, lo *log.Logger) (*Auth, error) {
+	if cfg.SessionDuration < time.Second {
+		cfg.SessionDuration = 7 * 24 * time.Hour
+	}
+
 	a := &Auth{
 		cfg: cfg,
 		cb:  cb,
@@ -92,10 +105,10 @@ func New(cfg Config, db *sql.DB, cb *Callbacks, lo *log.Logger) (*Auth, error) {
 		SessionIDLength:  64,
 		Cookie: simplesessions.CookieOptions{
 			IsHTTPOnly: true,
-			MaxAge:     time.Hour * 24 * 7,
+			MaxAge:     cfg.SessionDuration,
 		},
 	})
-	st, err := postgres.New(postgres.Opt{}, db)
+	st, err := postgres.New(postgres.Opt{TTL: cfg.SessionDuration}, db)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +184,17 @@ func (o *Auth) initOIDC() error {
 	}
 	o.provider = provider
 
+	// Only use PKCE (RFC 7636) if the provider's metadata advertises it, as providers
+	// that don't support it may reject the extra params.
+	var meta struct {
+		CodeChallengeMethods []string `json:"code_challenge_methods_supported"`
+	}
+	if err := provider.Claims(&meta); err != nil {
+		o.log.Printf("error reading OIDC provider metadata: %v", err)
+	} else {
+		o.pkce = slices.Contains(meta.CodeChallengeMethods, "S256")
+	}
+
 	return nil
 }
 
@@ -200,38 +224,58 @@ func (o *Auth) getVerifier() (*oidc.IDTokenVerifier, error) {
 	return o.verifier, nil
 }
 
-// getOAuthConfig returns the OAuth config, initializing it if necessary.
-func (o *Auth) getOAuthConfig() (*oauth2.Config, error) {
+// getOAuthConfig returns the OAuth config and whether the provider supports PKCE,
+// initializing them if necessary.
+func (o *Auth) getOAuthConfig() (*oauth2.Config, bool, error) {
 	o.Lock()
 	defer o.Unlock()
 
 	if o.oauthCfg.ClientID == "" {
 		if err := o.initOIDC(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return &o.oauthCfg, nil
+	return &o.oauthCfg, o.pkce, nil
 }
 
-// GetOIDCAuthURL returns the OIDC provider's auth URL to redirect to.
-func (o *Auth) GetOIDCAuthURL(state, nonce string) string {
-	cfg, err := o.getOAuthConfig()
+// GetOIDCAuthURL returns the OIDC provider's auth URL to redirect to and the PKCE code
+// verifier for the subsequent token exchange, empty if the provider doesn't support PKCE.
+func (o *Auth) GetOIDCAuthURL(state, nonce string) (string, string) {
+	cfg, pkce, err := o.getOAuthConfig()
 	if err != nil {
 		o.log.Printf("error getting OAuth config: %v", err)
-		return ""
+		return "", ""
 	}
-	return cfg.AuthCodeURL(state, oidc.Nonce(nonce))
+
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
+
+	codeVerifier := ""
+	if pkce {
+		codeVerifier = oauth2.GenerateVerifier()
+		opts = append(opts, oauth2.S256ChallengeOption(codeVerifier))
+	}
+
+	return cfg.AuthCodeURL(state, opts...), codeVerifier
 }
 
-// ExchangeOIDCToken takes an OIDC authorization code (recieved via redirect from the OIDC provider),
-// validates it, and returns an OIDC token for subsequent auth.
-func (o *Auth) ExchangeOIDCToken(code, nonce string) (string, OIDCclaim, error) {
-	cfg, err := o.getOAuthConfig()
+// ExchangeOIDCToken takes an OIDC authorization code (received via redirect from the OIDC provider)
+// and the PKCE code verifier from the auth request, validates it, and returns an OIDC token for
+// subsequent auth.
+func (o *Auth) ExchangeOIDCToken(code, nonce, codeVerifier string) (string, OIDCclaim, error) {
+	cfg, pkce, err := o.getOAuthConfig()
 	if err != nil {
 		return "", OIDCclaim{}, echo.NewHTTPError(http.StatusUnauthorized, fmt.Sprintf("error getting OAuth config: %v", err))
 	}
 
-	tk, err := cfg.Exchange(context.TODO(), code)
+	var opts []oauth2.AuthCodeOption
+	if pkce {
+		if codeVerifier == "" {
+			return "", OIDCclaim{}, echo.NewHTTPError(http.StatusUnauthorized, "PKCE code verifier missing")
+		}
+		opts = append(opts, oauth2.VerifierOption(codeVerifier))
+	}
+
+	tk, err := cfg.Exchange(context.TODO(), code, opts...)
 	if err != nil {
 		return "", OIDCclaim{}, echo.NewHTTPError(http.StatusUnauthorized, fmt.Sprintf("error exchanging token: %v", err))
 	}
@@ -260,6 +304,11 @@ func (o *Auth) ExchangeOIDCToken(code, nonce string) (string, OIDCclaim, error) 
 		return "", OIDCclaim{}, errors.New("error getting user from OIDC")
 	}
 
+	// Preserve verified ID token claims for role mapping. UserInfo must not replace these.
+	if err := idTk.Claims(&claims.RawClaims); err != nil {
+		return "", OIDCclaim{}, errors.New("error getting raw claims from OIDC")
+	}
+
 	// If claims doesn't have the e-mail, attempt to fetch it from the userinfo endpoint.
 	if claims.Email == "" {
 		provider, err := o.getProvider()
@@ -272,10 +321,21 @@ func (o *Auth) ExchangeOIDCToken(code, nonce string) (string, OIDCclaim, error) 
 			return "", OIDCclaim{}, errors.New("error fetching user info from OIDC")
 		}
 
+		if userInfo.Subject != idTk.Subject {
+			return "", OIDCclaim{}, errors.New("OIDC UserInfo subject did not match")
+		}
+
+		// Verification must apply to the email supplied by UserInfo.
+		claims.EmailVerified = false
+
 		// Parse the UserInfo claims into the claims struct
 		if err := userInfo.Claims(&claims); err != nil {
 			return "", OIDCclaim{}, errors.New("error parsing user info claims")
 		}
+	}
+
+	if !claims.EmailVerified {
+		return "", OIDCclaim{}, echo.NewHTTPError(http.StatusUnauthorized, "OIDC email is not verified")
 	}
 
 	return rawIDTk, claims, nil
@@ -286,7 +346,7 @@ func (o *Auth) ExchangeOIDCToken(code, nonce string) (string, OIDCclaim, error) 
 // sets the authenticated User{} on the echo context on the key UserKey. On failure, it sets an Error{}
 // instead on the same key.
 func (o *Auth) Middleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		// It's an `Authorization` header request.
 		hdr := strings.TrimSpace(c.Request().Header.Get("Authorization"))
 
@@ -336,7 +396,7 @@ func (o *Auth) Middleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 // Perm is an HTTP handler middleware that checks if the authenticated user has the required permissions.
 func (o *Auth) Perm(next echo.HandlerFunc, perms ...string) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		u, ok := c.Get(UserHTTPCtxKey).(User)
 		if !ok {
 			c.Set(UserHTTPCtxKey, echo.NewHTTPError(http.StatusForbidden, "invalid session"))
@@ -369,7 +429,7 @@ func (o *Auth) Perm(next echo.HandlerFunc, perms ...string) echo.HandlerFunc {
 }
 
 // SaveSession creates and sets a session (post successful login/auth).
-func (o *Auth) SaveSession(u User, oidcToken string, c echo.Context, remember bool) error {
+func (o *Auth) SaveSession(u User, oidcToken string, c *echo.Context) error {
 	sess, err := o.sess.NewSession(c, c)
 	if err != nil {
 		o.log.Printf("error creating login session: %v", err)
@@ -384,8 +444,41 @@ func (o *Auth) SaveSession(u User, oidcToken string, c echo.Context, remember bo
 	return nil
 }
 
+// GetOIDCLogoutURL returns the provider's logout URL if logout is enabled and supported, or an empty string.
+func (o *Auth) GetOIDCLogoutURL(token, redirectURL string) (string, error) {
+	if token == "" || !o.cfg.OIDC.Enabled || !o.cfg.OIDC.Logout {
+		return "", nil
+	}
+
+	provider, err := o.getProvider()
+	if err != nil {
+		return "", err
+	}
+
+	var meta struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := provider.Claims(&meta); err != nil {
+		return "", err
+	}
+	if meta.EndSessionEndpoint == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(meta.EndSessionEndpoint)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("id_token_hint", token)
+	q.Set("post_logout_redirect_uri", redirectURL)
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
 // GetSessionID returns the current session ID from the echo context.
-func GetSessionID(c echo.Context) string {
+func GetSessionID(c *echo.Context) string {
 	sess, ok := c.Get(SessionKey).(*simplesessions.Session)
 	if !ok || sess == nil {
 		return ""
@@ -401,7 +494,7 @@ func HashAPIToken(token string) string {
 }
 
 // validateSession checks if the cookie session is valid (in the DB) and returns the session and user details.
-func (o *Auth) validateSession(c echo.Context) (*simplesessions.Session, User, error) {
+func (o *Auth) validateSession(c *echo.Context) (*simplesessions.Session, User, error) {
 	// Cookie session.
 	sess, err := o.sess.Acquire(context.TODO(), c, c)
 	if err != nil {
@@ -427,12 +520,16 @@ func (o *Auth) validateSession(c echo.Context) (*simplesessions.Session, User, e
 		o.log.Printf("error fetching session user: %v", err)
 	}
 
+	if err == nil && user.Status != UserStatusEnabled {
+		return nil, User{}, echo.NewHTTPError(http.StatusForbidden, "user is disabled")
+	}
+
 	return sess, user, err
 }
 
 // GetUser retrieves and returns the User object from an authenticated
 // HTTP handler request.
-func GetUser(c echo.Context) User {
+func GetUser(c *echo.Context) User {
 	return c.Get(UserHTTPCtxKey).(User)
 }
 

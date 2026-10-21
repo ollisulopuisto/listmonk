@@ -10,12 +10,55 @@ import (
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/internal/subimporter"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
+
+// importView is the admin view for the subscriber import page.
+type importView struct {
+	adminView
+
+	AllLists      []models.List
+	SelectedLists []models.List
+	Status        subimporter.Status
+}
+
+// ViewImport renders the HTML view for the subscriber CSV import page.
+func (a *App) ViewImport(c *echo.Context) error {
+	// Get the lists the user can access.
+	allLists, err := a.getViewableLists(c)
+	if err != nil {
+		return err
+	}
+
+	// Get the lists to pre-select (in the form) from the `list_id`` query param.
+	var selected []models.List
+	if ids, err := getQueryInts("list_id", c.QueryParams()); err == nil && len(ids) > 0 {
+		s := make(map[int]struct{}, len(ids))
+		for _, id := range ids {
+			s[id] = struct{}{}
+		}
+		for _, l := range allLists {
+			if _, ok := s[l.ID]; ok {
+				selected = append(selected, l)
+			}
+		}
+	}
+
+	data := importView{
+		adminView:     newAdminView(c, a.i18n.T("import.title"), "", "subscribers.import"),
+		AllLists:      allLists,
+		SelectedLists: selected,
+
+		// Live import stats.
+		Status: a.importer.GetStats(),
+	}
+
+	return c.Render(http.StatusOK, "admin-import", data)
+}
 
 // ImportSubscribers handles the uploading and bulk importing of
 // a ZIP file of one or more CSV files.
-func (a *App) ImportSubscribers(c echo.Context) error {
+func (a *App) ImportSubscribers(c *echo.Context) error {
 	// Is an import already running?
 	if a.importer.GetStats().Status == subimporter.StatusImporting {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("import.alreadyRunning"))
@@ -25,7 +68,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 	var opt subimporter.SessionOpt
 	if err := json.Unmarshal([]byte(c.FormValue("params")), &opt); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest,
-			a.i18n.Ts("import.invalidParams", "error", err.Error()))
+			a.i18n.Ts("globals.messages.invalidParams", "error", err.Error()))
 	}
 
 	// Filter list IDs against the current user's permitted lists.
@@ -39,7 +82,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 
 	// Validate mode.
 	if opt.Mode != subimporter.ModeSubscribe && opt.Mode != subimporter.ModeBlocklist {
-		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("import.invalidMode"))
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidMode"))
 	}
 
 	// If no status is specified, pick a default one.
@@ -66,7 +109,7 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest,
-			a.i18n.Ts("import.invalidFile", "error", err.Error()))
+			a.i18n.Ts("globals.messages.invalidFile", "error", err.Error()))
 	}
 
 	src, err := file.Open()
@@ -79,13 +122,13 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 	out, err := os.CreateTemp("", "listmonk")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			a.i18n.Ts("import.errorCopyingFile", "error", err.Error()))
+			a.i18n.Ts("globals.messages.errorCopyingFile", "error", err.Error()))
 	}
 	defer out.Close()
 
 	if _, err = io.Copy(out, src); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			a.i18n.Ts("import.errorCopyingFile", "error", err.Error()))
+			a.i18n.Ts("globals.messages.errorCopyingFile", "error", err.Error()))
 	}
 
 	// Start the importer session.
@@ -119,20 +162,20 @@ func (a *App) ImportSubscribers(c echo.Context) error {
 }
 
 // GetImportSubscribers returns import statistics.
-func (a *App) GetImportSubscribers(c echo.Context) error {
+func (a *App) GetImportSubscribers(c *echo.Context) error {
 	s := a.importer.GetStats()
 	return c.JSON(http.StatusOK, okResp{s})
 }
 
 // GetImportSubscriberStats returns import statistics.
-func (a *App) GetImportSubscriberStats(c echo.Context) error {
+func (a *App) GetImportSubscriberStats(c *echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{string(a.importer.GetLogs())})
 }
 
 // StopImportSubscribers sends a stop signal to the importer.
 // If there's an ongoing import, it'll be stopped, and if an import
 // is finished, it's state is cleared.
-func (a *App) StopImportSubscribers(c echo.Context) error {
+func (a *App) StopImportSubscribers(c *echo.Context) error {
 	a.importer.Stop()
 	return c.JSON(http.StatusOK, okResp{a.importer.GetStats()})
 }

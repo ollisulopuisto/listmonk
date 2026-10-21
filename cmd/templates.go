@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"html/template"
 	"net/http"
 	"regexp"
@@ -9,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -29,10 +28,82 @@ const (
 
 var (
 	regexpTplTag = regexp.MustCompile(`{{(\s+)?template\s+?"content"(\s+)?\.(\s+)?}}`)
+
+	// templatesQueryDefaults is the allow list of filter query params.
+	templatesQueryDefaults = map[string]string{
+		"type":     "",
+		"query":    "",
+		"order_by": models.FieldCreatedAt,
+		"order":    models.OrderAsc,
+	}
 )
 
+// templatesView is the admin page view for the templates list page.
+type templatesView struct {
+	adminView
+
+	Templates []models.Template
+	Page      models.PageProps
+	Type      string
+}
+
+// templateView is the admin page view for creating/editing a single template.
+type templateView struct {
+	adminView
+
+	IsNew    bool
+	Template models.Template
+}
+
+// ViewTemplates renders the HTML list view for templates.
+func (a *App) ViewTemplates(c *echo.Context) error {
+	q := makeQuery(c.Request().URL.Query(), templatesQueryDefaults)
+	typ := q.Get("type")
+
+	out, err := a.core.GetTemplates(q.Get("query"), typ, true, q.Get("order_by"), q.Get("order"))
+	if err != nil {
+		return err
+	}
+
+	data := templatesView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
+		Templates: out,
+		Page:      models.NewPageProps(q, len(out), 1, 0),
+		Type:      typ,
+	}
+
+	return c.Render(http.StatusOK, "admin-templates", data)
+}
+
+// ViewNewTemplate renders the new template page.
+func (a *App) ViewNewTemplate(c *echo.Context) error {
+	data := templateView{
+		adminView: newAdminView(c, a.i18n.T("templates.newTemplate")+" / "+a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
+		IsNew:     true,
+		Template:  models.Template{Type: models.TemplateTypeCampaign},
+	}
+
+	return c.Render(http.StatusOK, "admin-template", data)
+}
+
+// ViewTemplate renders the single-page editor for an existing template.
+func (a *App) ViewTemplate(c *echo.Context) error {
+	id := getID(c)
+	out, err := a.core.GetTemplate(id, false)
+	if err != nil {
+		return err
+	}
+
+	data := templateView{
+		adminView: newAdminView(c, out.Name+" / "+a.i18n.T("globals.terms.templates"), "", "campaigns.templates"),
+		Template:  out,
+	}
+
+	return c.Render(http.StatusOK, "admin-template", data)
+}
+
 // GetTemplate handles the retrieval of a template
-func (a *App) GetTemplate(c echo.Context) error {
+func (a *App) GetTemplate(c *echo.Context) error {
 	// If no_body is true, blank out the body of the template from the response.
 	noBody, _ := strconv.ParseBool(c.QueryParam("no_body"))
 
@@ -47,12 +118,12 @@ func (a *App) GetTemplate(c echo.Context) error {
 }
 
 // GetTemplates handles retrieval of templates.
-func (a *App) GetTemplates(c echo.Context) error {
+func (a *App) GetTemplates(c *echo.Context) error {
 	// If no_body is true, blank out the body of the template from the response.
 	noBody, _ := strconv.ParseBool(c.QueryParam("no_body"))
 
 	// Fetch templates from the DB.
-	out, err := a.core.GetTemplates("", noBody)
+	out, err := a.core.GetTemplates(c.QueryParam("query"), "", noBody, c.QueryParam("order_by"), c.QueryParam("order"))
 	if err != nil {
 		return err
 	}
@@ -61,7 +132,7 @@ func (a *App) GetTemplates(c echo.Context) error {
 }
 
 // PreviewTemplate renders the HTML preview of a template in the DB.
-func (a *App) PreviewTemplate(c echo.Context) error {
+func (a *App) PreviewTemplate(c *echo.Context) error {
 	// Fetch one template from the DB.
 	id := getID(c)
 	tpl, err := a.core.GetTemplate(id, false)
@@ -75,13 +146,11 @@ func (a *App) PreviewTemplate(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("X-Frame-Options", "SAMEORIGIN")
-	c.Response().Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
-	return c.HTML(http.StatusOK, string(out))
+	return renderSandboxedHTML(c, string(out))
 }
 
 // PreviewTemplateBody renders the HTML preview of a template given its type and body.
-func (a *App) PreviewTemplateBody(c echo.Context) error {
+func (a *App) PreviewTemplateBody(c *echo.Context) error {
 	tpl := models.Template{
 		Type: c.FormValue("template_type"),
 		Body: c.FormValue("body"),
@@ -103,17 +172,19 @@ func (a *App) PreviewTemplateBody(c echo.Context) error {
 		return err
 	}
 
-	c.Response().Header().Set("X-Frame-Options", "SAMEORIGIN")
-	c.Response().Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
-	return c.HTML(http.StatusOK, string(out))
+	return renderSandboxedHTML(c, string(out))
 }
 
 // CreateTemplate handles template creation.
-func (a *App) CreateTemplate(c echo.Context) error {
+func (a *App) CreateTemplate(c *echo.Context) error {
 	var o models.Template
 	if err := c.Bind(&o); err != nil {
 		return err
 	}
+	if o.Type != models.TemplateTypeCampaign && o.Type != models.TemplateTypeCampaignVisual && o.Type != models.TemplateTypeTx {
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "type"))
+	}
+
 	if err := a.validateTemplate(o); err != nil {
 		return err
 	}
@@ -149,7 +220,7 @@ func (a *App) CreateTemplate(c echo.Context) error {
 }
 
 // UpdateTemplate handles template modification.
-func (a *App) UpdateTemplate(c echo.Context) error {
+func (a *App) UpdateTemplate(c *echo.Context) error {
 	var o models.Template
 	if err := c.Bind(&o); err != nil {
 		return err
@@ -190,7 +261,7 @@ func (a *App) UpdateTemplate(c echo.Context) error {
 }
 
 // TemplateSetDefault handles template modification.
-func (a *App) TemplateSetDefault(c echo.Context) error {
+func (a *App) TemplateSetDefault(c *echo.Context) error {
 	// Update the template in the DB.
 	id := getID(c)
 	if err := a.core.SetDefaultTemplate(id); err != nil {
@@ -201,7 +272,7 @@ func (a *App) TemplateSetDefault(c echo.Context) error {
 }
 
 // DeleteTemplate handles template deletion.
-func (a *App) DeleteTemplate(c echo.Context) error {
+func (a *App) DeleteTemplate(c *echo.Context) error {
 	// Delete the template from the DB.
 	id := getID(c)
 	if err := a.core.DeleteTemplate(id); err != nil {
@@ -217,7 +288,7 @@ func (a *App) DeleteTemplate(c echo.Context) error {
 // compileTemplate validates template fields.
 func (a *App) validateTemplate(o models.Template) error {
 	if !strHasLen(o.Name, 1, stdInputMaxLen) {
-		return errors.New(a.i18n.T("campaigns.fieldInvalidName"))
+		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("campaigns.fieldInvalidName"))
 	}
 
 	if o.Type == models.TemplateTypeCampaign && !regexpTplTag.MatchString(o.Body) {

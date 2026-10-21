@@ -1,0 +1,101 @@
+{{ define "admin-sidebar" }}
+{{- $u := .Data.Profile }}
+{{- $p := .Data.PageID }}
+<nav>
+	<ul>
+		<li>
+			<a href="{{ URI "/admin" }}" {{ IsNav $p "dashboard" }}>{{ Icon "grid" }} {{ .L.T "globals.terms.dashboard" }}</a>
+		</li>
+
+		<li>
+			<details {{ ExpandNav $p "lists" }} name="sidebar-nav">
+				<summary>{{ Icon "list" }} {{ .L.T "globals.terms.lists" }}</summary>
+				<ul>
+					<li><a href="{{ URI "/admin/lists" }}" {{ IsNav $p "lists.all" }}>{{ .L.T "menu.allLists" }}</a></li>
+					<li><a href="{{ URI "/admin/lists" }}?status=archived" {{ IsNav $p "lists.archived" }}>{{ .L.T "globals.terms.archived" }}</a></li>
+					<li><a href="{{ URI "/admin/lists/analytics" }}?from={{ (now.AddDate 0 -3 0).Format "2006-01-02" }}" {{ IsNav $p "lists.analytics" }}>{{ .L.T "globals.terms.analytics" }}</a></li>
+					<li><a href="{{ URI "/admin/lists/forms" }}" {{ IsNav $p "lists.forms" }}>{{ .L.T "globals.terms.forms" }}</a></li>
+				</ul>
+			</details>
+		</li>
+
+		{{- if Can $u "subscribers:get" "subscribers:get_all" "subscribers:manage" "subscribers:import" "bounces:get" }}
+		<li>
+			<details {{ ExpandNav $p "subscribers" }} name="sidebar-nav">
+				<summary>{{ Icon "at-sign" }} {{ .L.T "globals.terms.subscribers" }}</summary>
+				<ul>
+					{{- if Can $u "subscribers:get" "subscribers:get_all" }}
+					<li><a href="{{ URI "/admin/subscribers" }}" {{ IsNav $p "subscribers.all" }}>{{ .L.T "menu.allSubscribers" }}</a></li>
+					{{- end }}
+					{{- if Can $u "subscribers:import" }}
+					<li><a href="{{ URI "/admin/subscribers/import" }}" {{ IsNav $p "subscribers.import" }}>{{ .L.T "globals.terms.import" }}</a></li>
+					{{- end }}
+					{{- if Can $u "bounces:get" }}
+					<li><a href="{{ URI "/admin/subscribers/bounces" }}" {{ IsNav $p "subscribers.bounces" }}>{{ .L.T "globals.terms.bounces" }}</a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
+		{{- if Can $u "campaigns:get" "campaigns:manage" "campaigns:get_analytics" "media:get" "templates:get" }}
+		<li>
+			<details {{ ExpandNav $p "campaigns" }} name="sidebar-nav">
+				<summary>{{ Icon "send" }} {{ .L.T "globals.terms.campaigns" }}</summary>
+				<ul>
+					{{- if Can $u "campaigns:get" "campaigns:get_all" }}
+					<li><a href="{{ URI "/admin/campaigns" }}" {{ IsNav $p "campaigns.all" }}>{{ .L.T "menu.allCampaigns" }}</a></li>
+					{{- end }}
+					{{- if Can $u "campaigns:manage" "campaigns:manage_all" }}
+					<li><a href="{{ URI "/admin/campaigns/new" }}" {{ IsNav $p "campaigns.new" }}>{{ .L.T "globals.buttons.createNew" }}</a></li>
+					{{- end }}
+					{{- if Can $u "media:get" "media:manage" }}
+					<li><a href="{{ URI "/admin/campaigns/media" }}" {{ IsNav $p "campaigns.media" }}>{{ .L.T "globals.terms.media" }}</a></li>
+					{{- end }}
+					{{- if Can $u "templates:get" }}
+					<li><a href="{{ URI "/admin/templates" }}" {{ IsNav $p "campaigns.templates" }}>{{ .L.T "globals.terms.templates" }}</a></li>
+					{{- end }}
+					{{- if Can $u "campaigns:get_analytics" }}
+					<li><a href="{{ URI "/admin/campaigns/analytics" }}" {{ IsNav $p "campaigns.analytics" }}>{{ .L.T "globals.terms.analytics" }}</a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
+		{{- if Can $u "users:get" "users:manage" "roles:get" "roles:manage" }}
+		<li>
+			<details {{ ExpandNav $p "users" }} name="sidebar-nav">
+				<summary>{{ Icon "users" }} {{ .L.T "globals.terms.users" }}</summary>
+				<ul>
+					{{- if Can $u "users:get" }}
+					<li><a href="{{ URI "/admin/users" }}" {{ IsNav $p "users.users" }}>{{ .L.T "globals.terms.users" }}</a></li>
+					{{- end }}
+					{{- if Can $u "roles:get" }}
+					<li><a href="{{ URI "/admin/users/roles" }}" {{ IsNav $p "users.user-roles" }}>{{ .L.T "users.userRoles" }}</a></li>
+					<li><a href="{{ URI "/admin/users/roles/lists" }}" {{ IsNav $p "users.list-roles" }}>{{ .L.T "users.listRoles" }}</a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+
+		{{- if Can $u "settings:get" "settings:manage" "settings:maintain" }}
+		<li>
+			<details {{ ExpandNav $p "settings" }} name="sidebar-nav">
+				<summary>{{ Icon "settings" }} {{ .L.T "globals.terms.settings" }}</summary>
+				<ul>
+					{{- if Can $u "settings:get" }}
+					<li><a href="{{ URI "/admin/settings" }}" {{ IsNav $p "settings.all" }}>{{ .L.T "globals.terms.settings" }}</a></li>
+					<li><a href="{{ URI "/admin/settings/logs" }}" {{ IsNav $p "settings.logs" }}>{{ .L.T "globals.terms.logs" }}</a></li>
+					{{- end }}
+					{{- if Can $u "settings:maintain" }}
+					<li><a href="{{ URI "/admin/settings/maintenance" }}" {{ IsNav $p "settings.maintenance" }}>{{ .L.T "globals.terms.maintenance" }}</a></li>
+					{{- end }}
+				</ul>
+			</details>
+		</li>
+		{{- end }}
+	</ul>
+</nav>
+{{ end }}

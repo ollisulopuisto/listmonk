@@ -1,0 +1,71 @@
+{{ define "admin-subscriber" -}}
+{{ template "admin-header" . }}
+{{- $crumbTitle := .L.T "subscribers.newSubscriber" -}}
+{{- if not .Data.IsNew }}{{ $crumbTitle = .Data.Subscriber.Email }}{{ end -}}
+{{ template "breadcrumbs" dict "Root" . "Current" $crumbTitle "Parents" (list (dict "Label" (.L.T "globals.terms.subscribers") "URL" (URI "/admin/subscribers") "CanLink" (.Data.Can "subscribers:get" "subscribers:get_all"))) }}
+{{- $d := .Data -}}
+{{- $sub := $d.Subscriber -}}
+{{- $base := printf "%s/%d" (URI "/admin/subscribers") $sub.ID -}}
+
+<script>
+	window._lists = {{ ToJSON $d.AllLists }};
+	const _sub = {{ if $d.IsNew }}null{{ else }}{{ ToJSON $sub }}{{ end }};
+</script>
+<section class="subscribers" x-data="subscribersView(_sub)">
+	<header class="row page-header">
+		<div class="col-6">
+			<div class="hstack gap-1">
+				<div class="avatar avatar-title{{ if eq $sub.Status "blocklisted" }} disabled{{ end }}">
+					{{ if not $d.IsNew }}{{ template "avatar-icon" dict "Kind" "subscriber" "Name" (or $sub.Name $sub.Email) "Href" (printf "%s/%d" (URI "/admin/subscribers") $sub.ID) "Title" (printf "%s %s" ($.L.T "globals.buttons.view") (or $sub.Name $sub.Email)) }}{{ end }}
+					<h1 class="page-title avatar-label">
+						{{- if $d.IsNew }}
+							{{ .L.T "subscribers.newSubscriber" }}
+						{{- else }}
+							{{ $sub.Email }}
+							{{ if ne $sub.Status "enabled" }}{{ Badge (list (Dot) (.L.T (printf "globals.terms.%s" $sub.Status))) (printf "status-%s" $sub.Status) }}{{ end }}
+						{{- end }}
+					</h1>
+				</div>
+			</div>
+		</div>
+		<div class="col-6 hstack justify-end buttons">
+			{{- if and (eq $d.Tab "lists") ($d.Can "subscribers:manage") }}
+				{{ if ne $sub.Status "blocklisted" }}
+				<button type="button" class="outline external" data-testid="btn-send-optin" @click.prevent="onSendOptin" :disabled="!hasOptinSub">{{ Icon "mail" }} {{ .L.T "subscribers.sendOptinConfirm" }}</button>
+				{{ end }}
+				<button type="button" data-variant="primary" data-testid="btn-manage" @click.prevent="onOpenManage">{{ Icon "list" }} {{ .L.T "globals.buttons.manage" }}</button>
+			{{- end }}
+			{{- if and (eq $d.Tab "bounces") $d.Bounces }}
+				<button type="button" class="outline external" data-variant="danger" @click.prevent="onDeleteBounces">{{ Icon "trash-2" }} {{ .L.T "globals.buttons.clear" }}</button>
+			{{- end }}
+		</div>
+	</header>
+
+	{{- if not $d.IsNew }}
+		<div role="tablist" data-variant="primary">
+			<a role="tab" href="{{ $base }}" {{ if eq $d.Tab "activity" }}aria-selected="true"{{ end }}>{{ Icon "user" }} {{ .L.T "globals.buttons.view" }}</a>
+			<a role="tab" href="{{ $base }}/edit" {{ if eq $d.Tab "edit" }}aria-selected="true"{{ end }}>{{ Icon "edit-2" }} {{ .L.T "globals.buttons.edit" }}</a>
+			<a role="tab" href="{{ $base }}/lists" {{ if eq $d.Tab "lists" }}aria-selected="true"{{ end }}>{{ Icon "list" }} {{ .L.Tc "globals.terms.lists" 2 }} ({{ len $sub.ParsedLists }})</a>
+			{{- if $d.Can "bounces:get" }}
+				<a role="tab" href="{{ $base }}/bounces" {{ if eq $d.Tab "bounces" }}aria-selected="true"{{ end }}>{{ Icon "corner-right-down" }} {{ .L.T "globals.terms.bounces" }}</a>
+			{{- end }}
+		</div>
+	{{- end }}
+
+	{{- if $d.IsNew }}
+		{{ template "subscriber-form" dict "Root" . "Submit" "onSubmitNew" "IsNew" true "CanSave" ($d.Can "subscribers:manage") }}
+	{{- else if eq $d.Tab "edit" }}
+		{{ template "subscriber-form" dict "Root" . "Submit" "onSubmitUpdate" "CanSave" ($d.Can "subscribers:manage") }}
+	{{- else if eq $d.Tab "lists" }}
+		{{ template "subscriber-lists" dict "Root" . "CanSave" ($d.Can "subscribers:manage") }}
+	{{- else if eq $d.Tab "bounces" }}
+		{{ template "bounces-table" dict "Root" . }}
+	{{- else if eq $d.Tab "activity" }}
+		{{ template "subscriber-info" . }}
+	{{- end }}
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/subscribers.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

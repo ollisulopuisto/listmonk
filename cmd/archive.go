@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/feeds"
 	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	null "gopkg.in/volatiletech/null.v6"
 )
 
@@ -24,7 +24,7 @@ type campArchive struct {
 }
 
 // GetCampaignArchives renders the public campaign archives page.
-func (a *App) GetCampaignArchives(c echo.Context) error {
+func (a *App) GetCampaignArchives(c *echo.Context) error {
 	// Get archives from the DB.
 	pg := a.pg.NewFromURL(c.Request().URL.Query())
 	camps, total, err := a.getCampaignArchives(pg.Offset, pg.Limit, false)
@@ -41,16 +41,18 @@ func (a *App) GetCampaignArchives(c echo.Context) error {
 	// Meta.
 	out := models.PageResults{
 		Results: camps,
-		Total:   total,
-		Page:    pg.Page,
-		PerPage: pg.PerPage,
+		PageProps: models.PageProps{
+			Total:   total,
+			Page:    pg.Page,
+			PerPage: pg.PerPage,
+		},
 	}
 
 	return c.JSON(200, okResp{out})
 }
 
 // GetCampaignArchivesFeed renders the public campaign archives RSS feed.
-func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
+func (a *App) GetCampaignArchivesFeed(c *echo.Context) error {
 	var (
 		pg              = a.pg.NewFromURL(c.Request().URL.Query())
 		showFullContent = a.cfg.EnablePublicArchiveRSSContent
@@ -87,7 +89,7 @@ func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
 		Items:       out,
 	}
 
-	if err := feed.WriteRss(c.Response().Writer); err != nil {
+	if err := feed.WriteRss(c.Response()); err != nil {
 		a.log.Printf("error generating archive RSS feed: %v", err)
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("public.errorProcessingRequest"))
 	}
@@ -96,7 +98,7 @@ func (a *App) GetCampaignArchivesFeed(c echo.Context) error {
 }
 
 // CampaignArchivesPage renders the public campaign archives page.
-func (a *App) CampaignArchivesPage(c echo.Context) error {
+func (a *App) CampaignArchivesPage(c *echo.Context) error {
 	// Get archives from the DB.
 	pg := a.pg.NewFromURL(c.Request().URL.Query())
 	out, total, err := a.getCampaignArchives(pg.Offset, pg.Limit, false)
@@ -112,11 +114,11 @@ func (a *App) CampaignArchivesPage(c echo.Context) error {
 		Campaigns   []campArchive
 		TotalPages  int
 		Pagination  template.HTML
-	}{title, title, out, pg.TotalPages, template.HTML(pg.HTML("?page=%d"))})
+	}{title, title, out, pg.TotalPages, template.HTML(pg.HTML("", nil))})
 }
 
 // CampaignArchivePage renders the public campaign archives page.
-func (a *App) CampaignArchivePage(c echo.Context) error {
+func (a *App) CampaignArchivePage(c *echo.Context) error {
 	// ID can be the UUID or slug.
 	var (
 		idStr      = c.Param("id")
@@ -146,19 +148,19 @@ func (a *App) CampaignArchivePage(c echo.Context) error {
 		// 404.
 		if notFound {
 			return c.Render(http.StatusNotFound, tplMessage,
-				makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.campaignNotFound")))
+				makeMsgTpl(a.i18n.T("globals.terms.notFound"), "", a.i18n.T("public.campaignNotFound")))
 		}
 
 		// Some other internal error.
 		return c.Render(http.StatusInternalServerError, tplMessage,
-			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingCampaign")))
+			makeMsgTpl(a.i18n.T("globals.terms.error"), "", a.i18n.Ts("public.errorFetchingCampaign")))
 	}
 
 	// "Compile" the campaign template with appropriate data.
 	out, err := a.compileArchiveCampaigns([]models.Campaign{pubCamp})
 	if err != nil {
 		return c.Render(http.StatusInternalServerError, tplMessage,
-			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingCampaign")))
+			makeMsgTpl(a.i18n.T("globals.terms.error"), "", a.i18n.Ts("public.errorFetchingCampaign")))
 	}
 
 	// Render the campaign body.
@@ -167,14 +169,14 @@ func (a *App) CampaignArchivePage(c echo.Context) error {
 	if err != nil {
 		a.log.Printf("error rendering campaign: %v", err)
 		return c.Render(http.StatusInternalServerError, tplMessage,
-			makeMsgTpl(a.i18n.T("public.errorTitle"), "", a.i18n.Ts("public.errorFetchingCampaign")))
+			makeMsgTpl(a.i18n.T("globals.terms.error"), "", a.i18n.Ts("public.errorFetchingCampaign")))
 	}
 
 	return c.HTML(http.StatusOK, string(msg.Body()))
 }
 
 // CampaignArchivePageLatest renders the latest public campaign.
-func (a *App) CampaignArchivePageLatest(c echo.Context) error {
+func (a *App) CampaignArchivePageLatest(c *echo.Context) error {
 	// Get the latest campaign from the DB.
 	camps, _, err := a.getCampaignArchives(0, 1, true)
 	if err != nil {
@@ -183,7 +185,7 @@ func (a *App) CampaignArchivePageLatest(c echo.Context) error {
 
 	if len(camps) == 0 {
 		return c.Render(http.StatusNotFound, tplMessage,
-			makeMsgTpl(a.i18n.T("public.notFoundTitle"), "", a.i18n.T("public.campaignNotFound")))
+			makeMsgTpl(a.i18n.T("globals.terms.notFound"), "", a.i18n.T("public.campaignNotFound")))
 	}
 	camp := camps[0]
 

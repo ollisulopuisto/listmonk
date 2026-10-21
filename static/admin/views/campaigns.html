@@ -1,0 +1,47 @@
+{{ define "admin-campaigns" -}}
+{{ template "admin-header" . }}
+{{- $d := .Data -}}
+{{- $base := URI "/admin/campaigns" -}}
+{{- $status := $d.Page.Param "status" -}}
+{{- $type := $d.Page.Param "type" -}}
+{{- $tags := $d.Page.Param "tag" -}}
+
+<section class="campaigns" x-data="campaignsView">
+	<header class="row page-header">
+		<div class="col-4">
+			<h1 class="page-title">
+				{{ .L.T "globals.terms.campaigns" }}
+				<span>({{ $d.Page.Total }})</span>
+				{{- if $status }} {{ template "filter-badge" dict "Label" (list (Dot) (.L.T (printf "globals.terms.%s" $status))) "Class" (printf "enum status-%s" $status) "URL" ($d.Page.FilterURL $base "status") }}{{ end }}
+				{{- if $type }} {{ template "filter-badge" dict "Label" (list (Icon "user-check") (.L.T "lists.optin")) "Class" "enum" "URL" ($d.Page.FilterURL $base "type") }}{{ end }}
+				{{- if $tags }} {{ template "filter-badge" dict "Label" (printf "#%s" $tags) "Class" "tag" "URL" ($d.Page.FilterURL $base "tag") }}{{ end }}
+				{{- if gt $d.Page.Page 1 }} {{ template "filter-badge" dict "Label" (.L.Ts "globals.terms.page" "n" (printf "%d" $d.Page.Page)) "URL" ($d.Page.FilterURL $base) }}{{ end }}
+			</h1>
+		</div>
+		<div class="col-8 hstack justify-end buttons">
+			<form method="get" action="{{ $base }}" class="search-form">
+				{{- $d.Page.FormFields "query" "page" -}}
+				<fieldset class="group">
+					<input name="query" aria-label="Search" placeholder="{{ .L.T "campaigns.queryPlaceholder" }}" value="{{ $d.Page.Query }}" autofocus />
+					<button type="submit" class="outline external" aria-label="Search">{{ Icon "search" }}</button>
+				</fieldset>
+			</form>
+			{{- if $d.Can "campaigns:manage" "campaigns:manage_all" }}
+				<a href="{{ URI "/admin/campaigns/new" }}" class="button" data-variant="primary">
+					{{ Icon "plus" }} {{ .L.T "globals.buttons.new" }}
+				</a>
+			{{- end }}
+		</div>
+	</header>
+
+	<div class="card page-content has-table">
+		{{ template "campaigns-table" dict "Root" . "Base" $base "Readonly" false }}
+	</div>
+
+	{{ template "campaign-preview" . }}
+</section>
+
+<script type="module" src="{{ URI "/admin/static/js/views/campaigns.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

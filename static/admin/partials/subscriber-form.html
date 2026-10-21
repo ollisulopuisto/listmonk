@@ -1,0 +1,67 @@
+{{ define "subscriber-form" -}}
+{{- $root := .Root -}}
+{{- $submit := .Submit -}}
+{{- $canSave := .CanSave -}}
+<form method="post" @submit.prevent="{{ $submit }}">
+	<div class="page-content content">
+		<section>
+			<fieldset class="card">
+				<legend>{{ $root.L.T "globals.terms.profile" }}</legend>
+				{{ template "subscriber-fields" $root }}
+			</fieldset>
+
+			{{- if .IsNew }}
+				<fieldset class="card">
+					<legend>{{ $root.L.T "globals.terms.lists" }}</legend>
+					{{ template "list-selector" dict "Root" $root "Model" "form.lists" "ListID" "form-lists" "Placeholder" "subscribers.listsPlaceholder" }}
+					<label data-field :aria-disabled="!hasOptinList">
+						<input type="checkbox" x-model="form.preconfirm" data-testid="preconfirm" :disabled="!hasOptinList" /> {{ $root.L.T "subscribers.preconfirm" }}
+						<small data-hint>{{ $root.L.T "subscribers.preconfirmHelp" }}</small>
+					</label>
+				</fieldset>
+			{{- end }}
+
+			<fieldset class="card">
+				<legend id="subscriber-attribs-label">{{ $root.L.T "globals.terms.attribs" }}</legend>
+				{{ template "subscriber-attribs" $root }}
+			</fieldset>
+		</section>
+
+		<footer class="hstack justify-end mt-6">
+			{{- if $canSave }}
+				<button type="submit" data-variant="primary" data-testid="btn-save" :disabled="isLoading('subscribers.save')" :aria-busy="isLoading('subscribers.save')">{{ $root.L.T "globals.buttons.save" }}</button>
+			{{- end }}
+		</footer>
+	</div>
+</form>
+{{- end }}
+
+{{ define "subscriber-fields" -}}
+{{- $root := . -}}
+<label data-field>
+	{{ $root.L.T "globals.fields.email" }}
+	<input name="email" type="email" maxlength="200" autofocus required x-model="form.email" />
+</label>
+
+<label data-field>
+	{{ $root.L.T "globals.fields.name" }}
+	<input name="name" maxlength="200" x-model="form.name" />
+</label>
+
+<div data-field>
+	<label for="sub-status">{{ $root.L.T "globals.fields.status" }}</label>
+	<select name="status" id="sub-status" required x-model="form.status">
+		<option value="enabled">{{ $root.L.T "globals.terms.enabled" }}</option>
+		<option value="blocklisted">{{ $root.L.T "globals.terms.blocklisted" }}</option>
+	</select>
+	<small data-hint>{{ $root.L.T "subscribers.blocklistedHelp" }}</small>
+</div>
+{{- end }}
+
+{{ define "subscriber-attribs" -}}
+{{- $root := . -}}
+<div data-field>
+	<textarea name="attribs" aria-labelledby="subscriber-attribs-label" rows="4" x-model="form.strAttribs" class="monospace"></textarea>
+	<small data-hint>{{ $root.L.T "subscribers.attribsHelp" }} <code>{"job": "developer", "location": "Mars", "has_rocket": true}</code></small>
+</div>
+{{- end }}

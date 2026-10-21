@@ -1,0 +1,131 @@
+{{ define "subscriber-info" -}}
+{{- $d := .Data -}}
+<div class="vstack gap-6 activity">
+	<div class="card">
+		<div class="row">
+			<div class="col-6">
+				<strong>{{ $d.Subscriber.Name }}</strong>
+				<div class="text-small text-light">{{ NiceDate $d.Subscriber.CreatedAt }}</div>
+			</div>
+			<div class="col-6 hstack gap-2 justify-end">
+				<button type="button" class="small" data-variant="secondary" title="{{ .L.T "globals.messages.clickToCopy" }}" aria-label="{{ .L.T "globals.fields.id" }}" @click="copyToClipboard(form.id)">
+					<strong>{{ .L.T "globals.fields.id" }}</strong> <span x-text="form.id"></span>
+				</button>
+				<button type="button" class="small" data-variant="secondary" title="{{ .L.T "globals.messages.clickToCopy" }}" aria-label="{{ .L.T "globals.fields.uuid" }}" @click="copyToClipboard(form.uuid)">
+					<strong>{{ .L.T "globals.fields.uuid" }}</strong> <span x-text="form.uuid"></span>
+				</button>
+			</div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-4"><div class="card float stat-card"><h5 class="title">{{ .L.T "globals.terms.campaigns" }}</h5><div class="stat-value">{{ len $d.CampaignViews }}</div></div></div>
+		<div class="col-4"><div class="card float stat-card"><h5 class="title">{{ .L.T "globals.terms.views" }}</h5><div class="stat-value">{{ $d.TotalViews }}</div></div></div>
+		<div class="col-4"><div class="card float stat-card"><h5 class="title">{{ .L.T "globals.terms.clicks" }}</h5><div class="stat-value">{{ $d.TotalClicks }}</div></div></div>
+	</div>
+
+	<section class="row">
+		<div class="col-6">
+			<article class="card float">
+				<h5 class="title">{{ .L.T "globals.terms.views" }}</h5>
+				<div class="chart-box">
+					<canvas id="chart-subscriber-views" role="img" aria-label="{{ .L.T "globals.terms.views" }}"></canvas>
+					<template>{{ template "empty-state" }}</template>
+				</div>
+			</article>
+		</div>
+		<div class="col-6">
+			<article class="card float">
+				<h5 class="title">{{ .L.T "globals.terms.clicks" }}</h5>
+				<div class="chart-box">
+					<canvas id="chart-subscriber-clicks" role="img" aria-label="{{ .L.T "globals.terms.clicks" }}"></canvas>
+					<template>{{ template "empty-state" }}</template>
+				</div>
+			</article>
+		</div>
+	</section>
+	<script>window._subscriberCharts = {{ ToJSON $d.Charts }};</script>
+
+	{{- if $d.CampaignViews }}
+	<div class="card float has-table">
+		<h5 class="title">{{ .L.T "globals.terms.views" }}</h5>
+		<div class="table-wrapper">
+			{{- if $d.Can "subscribers:manage" }}
+				<ot-dropdown class="bulk-actions">
+					<button popovertarget="views-actions" type="button" class="small" aria-label="{{ .L.T "globals.buttons.more" }}">{{ Icon "more-vertical" }}</button>
+					<menu popover id="views-actions">
+						<button type="button" role="menuitem" class="ghost" data-variant="danger" :disabled="isLoading('subscribers')" @click.prevent="onClearActivity('campaign_views')">{{ Icon "trash-2" }} {{ .L.T "globals.buttons.clear" }}</button>
+					</menu>
+				</ot-dropdown>
+			{{- end }}
+			<table>
+				<thead><tr><th>{{ .L.T "globals.terms.campaign" }}</th><th width="10%" class="align-center">{{ .L.T "globals.terms.views" }}</th><th width="20%">{{ .L.T "globals.fields.createdAt" }}</th></tr></thead>
+				<tbody>
+					{{- range $d.CampaignViews }}
+						<tr>
+							<td class="name">
+								<div class="avatar">
+									{{ template "avatar-icon" dict "Kind" "campaign" "Name" .Name "Href" (printf "%s/%d" (URI "/admin/campaigns") .ID) "Title" (printf "%s %s" ($.L.T "globals.buttons.view") .Name) }}
+									<div class="avatar-label vstack gap-1">
+										<div>
+											<a href="{{ URI "/admin/campaigns" }}/{{ .ID }}" class="unstyled">{{ .Name }}</a>
+											<div class="subject text-8 text-light">
+												<a href="{{ URI "/admin/campaigns" }}/{{ .ID }}" class="unstyled">{{ .Subject }}</a>
+											</div>
+										</div>
+									</div>
+								</div>
+							</td>
+							<td class="align-center" data-label="{{ $.L.T "globals.terms.views" }}">{{ .ViewCount }}</td>
+							<td data-label="{{ $.L.T "globals.fields.createdAt" }}">{{ NiceDate .LastViewedAt }}</td>
+						</tr>
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+	{{- end }}
+
+	{{- if $d.LinkClicks }}
+	<div class="card float has-table">
+		<h5 class="title">{{ .L.T "globals.terms.clicks" }}</h5>
+		<div class="table-wrapper">
+			{{- if $d.Can "subscribers:manage" }}
+				<ot-dropdown class="bulk-actions">
+					<button popovertarget="clicks-actions" type="button" class="small" aria-label="{{ .L.T "globals.buttons.more" }}">{{ Icon "more-vertical" }}</button>
+					<menu popover id="clicks-actions">
+						<button type="button" role="menuitem" class="ghost" data-variant="danger" :disabled="isLoading('subscribers')" @click.prevent="onClearActivity('link_clicks')">{{ Icon "trash-2" }} {{ .L.T "globals.buttons.clear" }}</button>
+					</menu>
+				</ot-dropdown>
+			{{- end }}
+			<table>
+				<thead><tr><th>{{ .L.T "globals.terms.campaign" }}</th><th>{{ .L.T "globals.terms.url" }}</th><th width="10%" class="align-center">{{ .L.T "globals.terms.clicks" }}</th><th width="20%">{{ .L.T "globals.fields.createdAt" }}</th></tr></thead>
+				<tbody>
+					{{- range $d.LinkClicks }}
+						<tr>
+							<td class="name">
+								{{- if .CampaignID }}
+								<div class="avatar">
+									{{ template "avatar-icon" dict "Kind" "campaign" "Name" .CampaignName "Href" (printf "%s/%d" (URI "/admin/campaigns") .CampaignID) "Title" (printf "%s %s" ($.L.T "globals.buttons.view") .CampaignName) }}
+									<div class="avatar-label vstack gap-1">
+										<div>
+											<a href="{{ URI "/admin/campaigns" }}/{{ .CampaignID }}" class="unstyled">{{ .CampaignName }}</a>
+											<div class="subject text-8 text-light">
+												<a href="{{ URI "/admin/campaigns" }}/{{ .CampaignID }}" class="unstyled">{{ .CampaignSubject }}</a>
+											</div>
+										</div>
+									</div>
+								</div>
+								{{- end }}
+							</td>
+							<td class="link-click-url" data-label="{{ $.L.T "globals.terms.url" }}"><a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .URL }}</a></td>
+							<td class="align-center" data-label="{{ $.L.T "globals.terms.clicks" }}">{{ .ClickCount }}</td>
+							<td data-label="{{ $.L.T "globals.fields.createdAt" }}">{{ NiceDate .LastClickedAt }}</td>
+						</tr>
+					{{- end }}
+				</tbody>
+			</table>
+		</div>
+	</div>
+	{{- end }}
+</div>
+{{- end }}

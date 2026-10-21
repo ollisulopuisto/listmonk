@@ -1,8 +1,8 @@
 # Try to get the commit hash from 1) git 2) the VERSION file 3) fallback.
-LAST_COMMIT := $(or $(shell git rev-parse --short HEAD 2> /dev/null),$(shell head -n 1 VERSION | grep -oP -m 1 "^[a-z0-9]+$$"),"")
+LAST_COMMIT := $(or $(shell git rev-parse --short HEAD 2> /dev/null),$(shell head -n 1 VERSION 2> /dev/null | grep -E -m 1 "^[a-z0-9]+$$"),"")
 
 # Try to get the semver from 1) git 2) the VERSION file 3) fallback.
-VERSION := $(or $(LISTMONK_VERSION),$(shell git describe --tags --abbrev=0 2> /dev/null),$(shell grep -oP 'tag: \Kv\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?' VERSION),"v0.0.0")
+VERSION := $(or $(LISTMONK_VERSION),$(shell git describe --tags --abbrev=0 2> /dev/null),$(shell sed -n 's/.*tag: \([v0-9a-zA-Z.-]*\).*/\1/p' VERSION 2> /dev/null),"v0.0.0")
 
 # CalVer: vYY.MM.DD.N where N is the total commit count.
 CALVER := v$(shell date +%y.%m.%d).$(shell git rev-list --count HEAD)
@@ -10,37 +10,34 @@ CALVER := v$(shell date +%y.%m.%d).$(shell git rev-list --count HEAD)
 BUILDDATE := $(if $(SOURCE_DATE_EPOCH),$(shell date -u -d @$(SOURCE_DATE_EPOCH) +"%Y-%m-%dT%H:%M:%S%z"),$(shell date -u +"%Y-%m-%dT%H:%M:%S%z"))
 BUILDSTR := ${VERSION} (\#${LAST_COMMIT} $(BUILDDATE))
 
-YARN ?= yarn
 GOPATH ?= $(HOME)/go
 STUFFBIN ?= $(GOPATH)/bin/stuffbin
-FRONTEND_YARN_MODULES = frontend/node_modules
-FRONTEND_DIST = frontend/dist
-FRONTEND_EMAIL_BUILDER_DIST_FINAL = frontend/public/static/email-builder
-FRONTEND_DEPS = \
-	$(FRONTEND_YARN_MODULES) \
-	$(FRONTEND_EMAIL_BUILDER_DIST_FINAL) \
-	frontend/index.html \
-	frontend/package.json \
-	frontend/vite.config.mjs \
-	frontend/.eslintrc.js \
-	$(shell find frontend/fontello frontend/public frontend/src -type f)
+# SSR admin frontend (built from static/admin/assets -> static/admin/dist).
+FRONTEND = static/admin
+FRONTEND_DIST = $(FRONTEND)/dist
+FRONTEND_NODE_MODULES = $(FRONTEND)/node_modules
+FRONTEND_DEPS_STAMP = $(FRONTEND_NODE_MODULES)/.installed
 
-FRONTEND_EMAIL_BUILDER = frontend/email-builder
-FRONTEND_EMAIL_BUILDER_YARN_MODULES = $(FRONTEND_EMAIL_BUILDER)/node_modules
-FRONTEND_EMAIL_BUILDER_DIST = $(FRONTEND_EMAIL_BUILDER)/dist
-FRONTEND_EMAIL_BUILDER_DEPS = \
-	$(FRONTEND_EMAIL_BUILDER_YARN_MODULES) \
-	$(FRONTEND_EMAIL_BUILDER)/package.json \
-	$(FRONTEND_EMAIL_BUILDER)/tsconfig.json \
-	$(FRONTEND_EMAIL_BUILDER)/vite.config.ts \
-	$(shell find $(FRONTEND_EMAIL_BUILDER)/src -type f)
+# Feather icons SVG sprite generated from icons.txt.
+FRONTEND_ICONS_LIST = $(FRONTEND)/icons.txt
+FRONTEND_ICONS = $(FRONTEND)/assets/static/icons.svg
+
+FRONTEND_DEPS = \
+	$(FRONTEND_DEPS_STAMP) \
+	$(FRONTEND)/package.json \
+	$(FRONTEND)/bun.lock \
+	$(FRONTEND)/build.mjs \
+	$(shell find $(FRONTEND)/assets -type f)
 
 BIN := listmonk
 STATIC := config.toml.sample \
 	schema.sql queries:/queries permissions.json \
 	static/public:/public \
+	static/admin/views:/admin/views \
+	static/admin/partials:/admin/partials \
+	static/admin/dist:/admin/static \
+	static/admin/i18n.txt:/admin/i18n.txt \
 	static/email-templates \
-	frontend/dist:/admin \
 	i18n:/i18n
 
 SQL := $(shell find . -type f -name "*.sql") $(shell find queries -type f -name "*.sql")
@@ -52,64 +49,60 @@ build: $(BIN)
 $(STUFFBIN):
 	go install github.com/knadh/stuffbin/...
 
-$(FRONTEND_YARN_MODULES): frontend/package.json frontend/yarn.lock
-	cd frontend && $(YARN) install
-	touch -c $(FRONTEND_YARN_MODULES)
-
-$(FRONTEND_EMAIL_BUILDER_YARN_MODULES): frontend/package.json frontend/yarn.lock
-	cd $(FRONTEND_EMAIL_BUILDER) && $(YARN) install
-	touch -c $(FRONTEND_EMAIL_BUILDER_YARN_MODULES)
+# Hack to always trigger Go build so that changes to version/build linker flags are picked up.
+.PHONY: FORCE
+FORCE:
 
 # Build the backend to ./listmonk.
-$(BIN): $(SRC) go.mod go.sum schema.sql $(SQL) permissions.json
+$(BIN): FORCE $(SRC) go.mod go.sum schema.sql $(SQL) permissions.json
 	CGO_ENABLED=0 go build -o ${BIN} -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.calVersion=${CALVER}'" ./cmd
 
-# Run the backend in dev mode. The frontend assets in dev mode are loaded from disk from frontend/dist.
-.PHONY: run
-run:
-	CGO_ENABLED=0 go run -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.calVersion=${CALVER}' -X 'main.frontendDir=frontend/dist'" ./cmd
+# Run the backend in dev mode. DEV_CONFIG is set by the dev container to use
+# its config and initialize a fresh DB.
+GO_RUN = CGO_ENABLED=0 go run -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.calVersion=${CALVER}'" ./cmd
 
-# Build the JS frontend into frontend/dist.
-$(FRONTEND_DIST): $(FRONTEND_DEPS)
-	export VUE_APP_VERSION="${VERSION}" && cd frontend && $(YARN) build
+.PHONY: run
+run: $(FRONTEND_DIST)
+ifneq ($(DEV_CONFIG),)
+	$(GO_RUN) --config="$(DEV_CONFIG)" --install --idempotent --yes
+endif
+	$(GO_RUN) $(if $(DEV_CONFIG),--config="$(DEV_CONFIG)")
+
+# Install SSR admin frontend deps.
+$(FRONTEND_DEPS_STAMP): $(FRONTEND)/package.json $(FRONTEND)/bun.lock
+	cd $(FRONTEND) && bun install --frozen-lockfile
+	touch $@
+
+# Generate svg icon sprite.
+$(FRONTEND_ICONS): $(FRONTEND_ICONS_LIST) scripts/build-icons.py
+	python3 scripts/build-icons.py --icons $(FRONTEND_ICONS_LIST) --out $(FRONTEND_ICONS)
+
+.PHONY: build-icons
+build-icons: $(FRONTEND_ICONS)
+
+# Build the SSR admin frontend (Bun) into static/admin/dist.
+$(FRONTEND_DIST): $(FRONTEND_ICONS) $(FRONTEND_DEPS)
+	cd $(FRONTEND) && bun run build
 	touch -c $(FRONTEND_DIST)
 
-# Build the JS email-builder dist.
-$(FRONTEND_EMAIL_BUILDER_DIST): $(FRONTEND_EMAIL_BUILDER_DEPS)
-	export VUE_APP_VERSION="${VERSION}" && cd $(FRONTEND_EMAIL_BUILDER) && $(YARN) build
-	touch -c $(FRONTEND_EMAIL_BUILDER_DIST)
-
-# Copy the build assets to frontend.
-$(FRONTEND_EMAIL_BUILDER_DIST_FINAL): $(FRONTEND_EMAIL_BUILDER_DIST)
-	mkdir -p $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-	cp -r $(FRONTEND_EMAIL_BUILDER_DIST)/* $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-	touch -c $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-
 .PHONY: build-frontend
-build-frontend: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL) $(FRONTEND_DIST)
-
-.PHONY: build-email-builder
-build-email-builder: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-
-# Run the JS frontend server in dev mode.
-.PHONY: run-frontend
-run-frontend: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-	export VUE_APP_VERSION="${VERSION}" && cd frontend && $(YARN) dev
+build-frontend: $(FRONTEND_DIST)
 
 # Run Go tests.
 .PHONY: test
 test:
 	go test ./...
 
-# Bundle all static assets including the JS frontend into the ./listmonk binary
-# using stuffbin (installed with make deps).
+# Bundle all static assets including the SSR admin frontend into the ./listmonk binary
+# using stuffbin.
 .PHONY: dist
-dist: $(STUFFBIN) build build-frontend pack-bin
+dist: $(STUFFBIN) build build-frontend
+	$(MAKE) pack-bin
 
-# pack-releases runns stuffbin packing on the given binary. This is used
+# pack-bin runs stuffbin packing on the given binary. This is used
 # in the .goreleaser post-build hook.
 .PHONY: pack-bin
-pack-bin: build-frontend $(BIN) $(STUFFBIN)
+pack-bin: build-frontend $(STUFFBIN)
 	$(STUFFBIN) -a stuff -in ${BIN} -out ${BIN} ${STATIC}
 
 # Use goreleaser to do a dry run producing local builds.
@@ -122,31 +115,23 @@ release-dry:
 release:
 	goreleaser release --parallelism 1 --clean
 
-# Build local docker images for development.
+# Build the dev environmentt.
 .PHONY: build-dev-docker
-build-dev-docker: build ## Build docker containers for the entire suite (Front/Core/PG).
-	cd dev; \
-	docker compose build ; \
+build-dev-docker:
+	docker compose -f dev/docker-compose.yml build
 
-# Spin a local docker suite for local development.
-.PHONY: dev-docker
-dev-docker: build-dev-docker ## Build and spawns docker containers for the entire suite (Front/Core/PG).
-	cd dev; \
-	docker compose up
+# Start the dev services and open a shell.
+.PHONY: run-dev-docker
+run-dev-docker:
+	docker compose -f dev/docker-compose.yml up -d --wait
+	docker compose -f dev/docker-compose.yml exec dev bash
 
-# Run the backend in docker-dev mode. The frontend assets in dev mode are loaded from disk from frontend/dist.
-.PHONY: run-backend-docker
-run-backend-docker:
-	CGO_ENABLED=0 go run -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.frontendDir=frontend/dist'" ./cmd --config=dev/config.toml
+# Stop the dev services (db is preserved).
+.PHONY: stop-dev-docker
+stop-dev-docker:
+	docker compose -f dev/docker-compose.yml down
 
-# Tear down the complete local development docker suite.
+# Remove the the dev environment and storage.
 .PHONY: rm-dev-docker
-rm-dev-docker: build ## Delete the docker containers including DB volumes.
-	cd dev; \
-	docker compose down -v ; \
-
-# Setup the db for local dev docker suite.
-.PHONY: init-dev-docker
-init-dev-docker: build-dev-docker ## Delete the docker containers including DB volumes.
-	cd dev; \
-	docker compose run --rm backend sh -c "make dist && ./listmonk --install --idempotent --yes --config dev/config.toml"
+rm-dev-docker:
+	docker compose -f dev/docker-compose.yml down -v

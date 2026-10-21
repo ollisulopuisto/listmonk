@@ -4,8 +4,10 @@ import (
 	"net/http"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/jmoiron/sqlx"
+	"github.com/jmoiron/sqlx/types"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 )
 
@@ -47,6 +49,13 @@ func (c *Core) QueryLists(searchStr, typ, optin, status string, tags []string, o
 
 	if tags == nil {
 		tags = []string{}
+	}
+
+	if orderBy == "" {
+		orderBy = models.FieldID
+	}
+	if order == "" {
+		order = models.OrderAsc
 	}
 
 	var (
@@ -97,10 +106,6 @@ func (c *Core) GetList(id int, uuid string) (models.List, error) {
 	out := res[0]
 	if out.Tags == nil {
 		out.Tags = []string{}
-	}
-	// Total counts.
-	for _, c := range out.SubscriberCounts {
-		out.SubscriberCount += c
 	}
 
 	return out, nil
@@ -195,12 +200,16 @@ func (c *Core) UpdateList(id int, l models.List) (models.List, error) {
 
 // DeleteList deletes a list.
 func (c *Core) DeleteList(id int) error {
-	return c.DeleteLists([]int{id}, "", true, nil)
+	return c.DeleteLists([]int{id}, "", "", "", "", nil, true, nil)
 }
 
 // DeleteLists deletes multiple lists.
-func (c *Core) DeleteLists(ids []int, query string, getAll bool, permittedIDs []int) error {
+func (c *Core) DeleteLists(ids []int, query, typ, optin, status string, tags []string, getAll bool, permittedIDs []int) error {
 	var queryStr string
+
+	if tags == nil {
+		tags = []string{}
+	}
 
 	if len(ids) > 0 {
 		queryStr = ""
@@ -208,10 +217,60 @@ func (c *Core) DeleteLists(ids []int, query string, getAll bool, permittedIDs []
 		queryStr = makeSearchString(query)
 	}
 
-	if _, err := c.q.DeleteLists.Exec(pq.Array(ids), queryStr, getAll, pq.Array(permittedIDs)); err != nil {
+	if _, err := c.q.DeleteLists.Exec(pq.Array(ids), queryStr, typ, optin, status, pq.StringArray(tags), getAll, pq.Array(permittedIDs)); err != nil {
 		c.log.Printf("error deleting lists: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.lists}", "error", pqErrMsg(err)))
 	}
 	return nil
+}
+
+// GetListCharts returns weekly subscription, unsubscription, and campaign view stats.
+func (c *Core) GetListCharts(id int, campaignViews bool) (types.JSONText, error) {
+	var (
+		out types.JSONText
+		err error
+	)
+
+	if c.consts.CacheSlowQueries {
+		err = c.q.GetListCharts.Get(&out, id, campaignViews)
+	} else {
+		err = c.db.Get(&out, c.q.GetListChartsLive, id, campaignViews)
+	}
+
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError,
+			c.i18n.Ts("globals.messages.errorFetching", "name", "list charts", "error", pqErrMsg(err)))
+	}
+
+	return out, nil
+}
+
+// GetListAnalyticsCounts returns subscriptions or campaign events grouped by list.
+func (c *Core) GetListAnalyticsCounts(ids []int, typ, fromDate, toDate, interval string) ([]models.CampaignAnalyticsCount, error) {
+	var stmt *sqlx.Stmt
+	switch typ {
+	case models.AnalyticsTypeSubscriptions:
+		stmt = c.q.GetListSubscriptionCounts
+	case models.AnalyticsTypeUnsubscriptions:
+		stmt = c.q.GetListUnsubscriptionCounts
+	case models.AnalyticsTypeViews:
+		stmt = c.q.GetListViewCounts
+	case models.AnalyticsTypeClicks:
+		stmt = c.q.GetListClickCounts
+	case models.AnalyticsTypeTotalViews:
+		stmt = c.q.GetListTotalViewCounts
+	case models.AnalyticsTypeTotalClicks:
+		stmt = c.q.GetListTotalClickCounts
+	case models.AnalyticsTypeBounces:
+		stmt = c.q.GetListBounceCounts
+	default:
+		return nil, echo.NewHTTPError(http.StatusBadRequest, c.i18n.T("globals.messages.invalidData"))
+	}
+	return c.getAnalyticsCounts(stmt, ids, fromDate, toDate, interval)
+}
+
+// GetListAnalyticsLinks returns link counts across campaigns by lists.
+func (c *Core) GetListAnalyticsLinks(ids []int, fromDate, toDate string) ([]models.CampaignAnalyticsLink, error) {
+	return c.getAnalyticsLinks(c.q.GetListLinkCounts, ids, fromDate, toDate)
 }

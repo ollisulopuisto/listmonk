@@ -10,8 +10,9 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/media"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -24,19 +25,104 @@ var (
 	imageExts  = []string{"gif", "png", "jpg", "jpeg"}
 )
 
+// mediaView is the admin view for the media gallery page.
+type mediaView struct {
+	adminView
+
+	Media    []media.Media
+	Provider string
+	Page     models.PageProps
+}
+
+// ViewMedia renders the HTML gallery view for uploaded media.
+func (a *App) ViewMedia(c *echo.Context) error {
+	res, props, err := a.getMedia(c)
+	if err != nil {
+		return err
+	}
+
+	data := mediaView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.media"), "", "campaigns.media"),
+		Media:     res,
+		Provider:  a.cfg.MediaUpload.Provider,
+		Page:      props,
+	}
+
+	return c.Render(http.StatusOK, "admin-media", data)
+}
+
+// ViewMediaFragment renders the header/footer-less media gallery for in iframes (popup dialogs).
+func (a *App) ViewMediaFragment(c *echo.Context) error {
+	res, props, err := a.getMedia(c)
+	if err != nil {
+		return err
+	}
+
+	data := mediaView{
+		adminView: newAdminView(c, a.i18n.T("globals.terms.media"), "", "campaigns.media"),
+		Media:     res,
+		Provider:  a.cfg.MediaUpload.Provider,
+		Page:      props,
+	}
+
+	return c.Render(http.StatusOK, "admin-media-fragment", data)
+}
+
+// mediaQueryDefaults is the allow list of filter query params.
+var mediaQueryDefaults = map[string]string{
+	"page":     "",
+	"per_page": "100",
+	"query":    "",
+}
+
+// getMediaPrefixes returns the media prefixes permitted for the user.
+func getMediaPrefixes(user auth.User) []string {
+	var prefixes []string
+	if hasAllLists, permittedLists := user.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage); !hasAllLists {
+		for _, id := range permittedLists {
+			prefixes = append(prefixes, fmt.Sprintf("list-%d/%%", id))
+			prefixes = append(prefixes, fmt.Sprintf("list-%d-%%", id))
+		}
+
+		// Always allow access to a "public" namespace.
+		prefixes = append(prefixes, "public/%", "public-%")
+
+		// If the user has no permitted lists and thus no prefixes,
+		// force a dummy prefix to ensure they see nothing (instead of everything).
+		if len(prefixes) == 0 {
+			prefixes = []string{"__none__"}
+		}
+	}
+	return prefixes
+}
+
+// getMedia queries paginated media items from the DB.
+func (a *App) getMedia(c *echo.Context) ([]media.Media, models.PageProps, error) {
+	q := makeQuery(c.Request().URL.Query(), mediaQueryDefaults)
+	prefixes := getMediaPrefixes(auth.GetUser(c))
+
+	pg := a.pg.NewFromURL(q)
+	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), prefixes, pg.Offset, pg.Limit)
+	if err != nil {
+		return nil, models.PageProps{}, err
+	}
+
+	return res, models.NewPageProps(q, total, pg.Page, pg.PerPage), nil
+}
+
 // UploadMedia handles media file uploads.
-func (a *App) UploadMedia(c echo.Context) error {
+func (a *App) UploadMedia(c *echo.Context) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest,
-			a.i18n.Ts("media.invalidFile", "error", err.Error()))
+			a.i18n.Ts("globals.messages.invalidFile", "error", err.Error()))
 	}
 
 	// Read the file from the HTTP form.
 	src, err := file.Open()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			a.i18n.Ts("media.errorReadingFile", "error", err.Error()))
+			a.i18n.Ts("globals.messages.errorReadingFile", "error", err.Error()))
 	}
 	defer src.Close()
 
@@ -50,7 +136,7 @@ func (a *App) UploadMedia(c echo.Context) error {
 	if !inArray("*", a.cfg.MediaUpload.Extensions) {
 		if ok := inArray(ext, a.cfg.MediaUpload.Extensions); !ok {
 			return echo.NewHTTPError(http.StatusBadRequest,
-				a.i18n.Ts("media.unsupportedFileType", "type", ext))
+				a.i18n.Ts("globals.messages.unsupportedFileType", "type", ext))
 		}
 	}
 
@@ -87,7 +173,7 @@ func (a *App) UploadMedia(c echo.Context) error {
 	if err != nil {
 		a.log.Printf("error uploading file: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
-			a.i18n.Ts("media.errorUploading", "error", err.Error()))
+			a.i18n.Ts("globals.messages.errorUploadingFile", "error", err.Error()))
 	}
 
 	// This keeps track of whether the file has to be deleted from the DB and the store
@@ -156,32 +242,12 @@ func (a *App) UploadMedia(c echo.Context) error {
 }
 
 // GetAllMedia handles retrieval of uploaded media.
-func (a *App) GetAllMedia(c echo.Context) error {
-	user := auth.GetUser(c)
-
+func (a *App) GetAllMedia(c *echo.Context) error {
 	var (
 		query    = c.FormValue("query")
-		prefixes []string
+		prefixes = getMediaPrefixes(auth.GetUser(c))
 		pg       = a.pg.NewFromURL(c.Request().URL.Query())
 	)
-
-	// If the user doesn't have global list access, restrict media visibility
-	// to their permitted lists using a file prefix convention (list-{id}/%).
-	if hasAllLists, permittedLists := user.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage); !hasAllLists {
-		for _, id := range permittedLists {
-			prefixes = append(prefixes, fmt.Sprintf("list-%d/%%", id))
-			prefixes = append(prefixes, fmt.Sprintf("list-%d-%%", id))
-		}
-
-		// Always allow access to a "public" namespace.
-		prefixes = append(prefixes, "public/%", "public-%")
-
-		// If the user has no permitted lists and thus no prefixes,
-		// force a dummy prefix to ensure they see nothing (instead of everything).
-		if len(prefixes) == 0 {
-			prefixes = []string{"__none__"}
-		}
-	}
 
 	// Fetch the media items from the DB.
 	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, prefixes, pg.Offset, pg.Limit)
@@ -191,16 +257,18 @@ func (a *App) GetAllMedia(c echo.Context) error {
 
 	out := models.PageResults{
 		Results: res,
-		Total:   total,
-		Page:    pg.Page,
-		PerPage: pg.PerPage,
+		PageProps: models.PageProps{
+			Total:   total,
+			Page:    pg.Page,
+			PerPage: pg.PerPage,
+		},
 	}
 
 	return c.JSON(http.StatusOK, okResp{out})
 }
 
 // GetMedia handles retrieval of a media item by ID.
-func (a *App) GetMedia(c echo.Context) error {
+func (a *App) GetMedia(c *echo.Context) error {
 	// Fetch the media item from the DB.
 	id := getID(c)
 	out, err := a.core.GetMedia(id, "", "", a.media)
@@ -212,7 +280,7 @@ func (a *App) GetMedia(c echo.Context) error {
 }
 
 // DeleteMedia handles deletion of uploaded media.
-func (a *App) DeleteMedia(c echo.Context) error {
+func (a *App) DeleteMedia(c *echo.Context) error {
 
 	// Delete the media from the DB. The query returns the filename.
 	id := getID(c)
@@ -229,7 +297,7 @@ func (a *App) DeleteMedia(c echo.Context) error {
 }
 
 // ServeS3Media serves media files stored in S3 when the public URL is a relative path.
-func (a *App) ServeS3Media(c echo.Context) error {
+func (a *App) ServeS3Media(c *echo.Context) error {
 	key := c.Param("filepath")
 	if key == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "missing media file path")

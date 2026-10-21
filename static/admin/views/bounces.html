@@ -1,0 +1,30 @@
+{{ define "admin-bounces" -}}
+{{ template "admin-header" . }}
+{{ template "breadcrumbs" dict "Root" . "Current" .Data.Title "Parents" (list (dict "Label" (.L.T "globals.terms.subscribers") "URL" (URI "/admin/subscribers") "CanLink" (.Data.Can "subscribers:get" "subscribers:get_all"))) }}
+{{- $d := .Data -}}
+{{- $base := URI "/admin/subscribers/bounces" -}}
+{{- $source := $d.Page.Param "source" -}}
+{{- $type := $d.Page.Param "type" -}}
+{{- $campaign := $d.Page.Param "campaign_id" -}}
+
+<section class="bounces">
+	<header class="page-header">
+		<div class="hstack">
+			<h1 class="page-title">
+				{{ .L.T "globals.terms.bounces" }}
+				<span>({{ $d.Page.Total }})</span>
+			</h1>
+			<div class="hstack gap-1">
+				{{- if $source }}<a href="{{ $base }}">{{ Badge (printf "%s ×" $source) }}</a>{{ end }}
+				{{- if $type }}<a href="{{ $base }}">{{ Badge (printf "%s ×" (.L.T (printf "bounces.%s" $type))) }}</a>{{ end }}
+				{{- if $campaign }}<a href="{{ $base }}">{{ Badge (printf "#%s ×" $campaign) }}</a>{{ end }}
+					{{- if gt $d.Page.Page 1 }}<a href="{{ $d.Page.FilterURL $base }}">{{ Badge (printf "%s ×" (.L.Ts "globals.terms.page" "n" (printf "%d" $d.Page.Page))) }}</a>{{ end }}
+			</div>
+		</div>
+	</header>
+
+	{{ template "bounces-table" dict "Root" . "Page" $d.Page }}
+</section>
+
+{{ template "admin-footer" . -}}
+{{ end }}

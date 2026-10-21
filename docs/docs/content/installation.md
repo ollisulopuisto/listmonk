@@ -12,6 +12,8 @@ listmonk is a simple binary application that requires a Postgres database instan
     To set the Super Admin username and password during installation, set the environment variables:
     `LISTMONK_ADMIN_USER=myuser LISTMONK_ADMIN_PASSWORD=xxxxx ./listmonk --install`
 
+    To also create a Super Admin API user, for automation, add `LISTMONK_ADMIN_API_USER=myapiuser`. Its API token is written to stderr as `export LISTMONK_ADMIN_API_TOKEN="..."`.
+
 
 ## Docker
 
@@ -22,6 +24,9 @@ The recommended method is to download the [docker-compose.yml](https://github.co
 ```shell
 # Download the compose file to the current directory.
 curl -LO https://github.com/knadh/listmonk/raw/master/docker-compose.yml
+
+# To run the latest v7 beta, edit the compose file and
+# change the image to: listmonk/listmonk:beta
 
 # Run the services in the background.
 docker compose up -d
@@ -89,9 +94,9 @@ A nightly build is automatically published with the latest changes merged to the
 
 To compile the latest unreleased version (`master` branch):
 
-1. Make sure `go`, `nodejs`, and `yarn` are installed on your system.
+1. Make sure `go` and `bun` are installed on your system.
 2. `git clone git@github.com:knadh/listmonk.git`
-3. `cd listmonk && make dist`. This will generate the `listmonk` binary.
+3. `cd listmonk && make dist`. This will build the SSR admin frontend and generate the `listmonk` binary.
 
 
 ## Helm chart for Kubernetes
@@ -128,6 +133,10 @@ $ helm upgrade \
 <a href="https://www.cloudron.io/store/app.listmonk.cloudronapp.html"><img src="https://cloudron.io/img/button.svg" alt="Install on Cloudron" style="max-width: 150px;"/></a>
 <br />
 <a href="https://console.hostim.dev/dashboard?preview=1&modal=1&template=listmonk"><img src="https://hostim.dev/img/deploy-button.svg" alt="Deploy on Hostim" style="max-width: 150px;"/></a>
+<br />
+<a href="https://pethost.dev/templates/listmonk/"><img src="https://pethost.dev/button.svg" alt="Deploy on Pethost" style="max-width: 150px;"/></a>
+<br />
+<a href="https://podway.io/start?app=listmonk&ref=docs-listmonk"><img src="https://podway.io/img/deploy-on-podway.svg" alt="Deploy on podway" style="max-width: 150px;"/></a>
 
 ## Tutorials
 * [Listmonk with Forward Email for Secure Newsletter Delivery](https://forwardemail.net/en/guides/newsletter-with-listmonk)

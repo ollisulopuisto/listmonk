@@ -1,0 +1,14 @@
+{{ define "campaign-attribs" -}}
+{{- $root := .Root -}}
+{{- $canManage := .CanManage -}}
+{{- $canSend := .CanSend -}}
+<div class="page-content content">
+	<fieldset class="card">
+		<legend id="campaign-attribs-label">{{ $root.L.T "globals.terms.attribs" }}</legend>
+		<div data-field>
+			<textarea x-model="form.attribsStr" :disabled="!canEdit" rows="15" aria-labelledby="campaign-attribs-label"></textarea>
+			<small data-hint>{{ $root.L.T "campaigns.attribsHelp" }}</small>
+		</div>
+	</fieldset>
+</div>
+{{- end }}

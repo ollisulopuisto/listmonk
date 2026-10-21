@@ -6,14 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/jmoiron/sqlx"
+	"github.com/jmoiron/sqlx/types"
 	"github.com/knadh/listmonk/internal/auth"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
+)
+
+const (
+	optinThrottleTTL = 10 * time.Minute
+	optinThrottleCap = 5000
 )
 
 var (
@@ -44,11 +52,13 @@ func (c *Core) GetSubscriber(id int, uuid, email string) (models.Subscriber, err
 			c.i18n.Ts("globals.messages.errorFetching",
 				"name", "{globals.terms.subscriber}", "error", pqErrMsg(err)))
 	}
+
 	if len(out) == 0 {
 		return models.Subscriber{}, echo.NewHTTPError(http.StatusBadRequest,
 			c.i18n.Ts("globals.messages.notFound", "name",
 				fmt.Sprintf("{globals.terms.subscriber} (%d: %s%s)", id, uuid, email)))
 	}
+
 	if err := out.LoadLists(c.q.GetSubscriberListsLazy); err != nil {
 		c.log.Printf("error loading subscriber lists: %v", err)
 		return models.Subscriber{}, echo.NewHTTPError(http.StatusInternalServerError,
@@ -103,13 +113,13 @@ func (c *Core) GetSubscribersByEmail(emails []string) (models.Subscribers, error
 }
 
 // QuerySubscribers queries and returns paginated subscrribers based on the given params including the total count.
-func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subStatus string, order, orderBy string, offset, limit int) (models.Subscribers, int, error) {
+func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string, order, orderBy string, offset, limit int) (models.Subscribers, int, error) {
 	// Sort params.
 	if !strSliceContains(orderBy, subQuerySortFields) {
 		orderBy = "subscribers.id"
 	}
-	if order != SortAsc && order != SortDesc {
-		order = SortDesc
+	if order != models.OrderAsc && order != models.OrderDesc {
+		order = models.OrderDesc
 	}
 
 	// Required for pq.Array()
@@ -123,12 +133,15 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 		cond = queryExp
 	}
 
+	// Handle the special "none" subscription status for orphan subscribers.
+	cond, subStatus = models.ApplyOrphanFilter(cond, subStatus)
+
 	// stmt is the raw SQL query.
 	stmt := strings.ReplaceAll(c.q.QuerySubscribers, "%query%", cond)
 	stmt = strings.ReplaceAll(stmt, "%order%", orderBy+" "+order)
 
 	// Validate the tables used in the query.
-	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, pq.Array(listIDs), subStatus, searchStr, offset, limit); err != nil {
+	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, pq.Array(listIDs), subStatus, searchStr, offset, limit, subscriberStatus); err != nil {
 		c.log.Printf("error validating query tables: %v", err)
 		return nil, 0, echo.NewHTTPError(http.StatusBadRequest,
 			c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
@@ -136,7 +149,7 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 
 	// Create a readonly transaction that just does COUNT() to obtain the count of results
 	// and to ensure that the arbitrary query is indeed readonly.
-	total, err := c.getSubscriberCount(searchStr, cond, subStatus, listIDs)
+	total, err := c.getSubscriberCount(searchStr, cond, subStatus, subscriberStatus, listIDs)
 	if err != nil {
 		c.log.Printf("error getting subscriber count: %v", err)
 		return nil, 0, err
@@ -155,7 +168,7 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 	defer tx.Rollback()
 
 	var out models.Subscribers
-	if err := tx.Select(&out, stmt, pq.Array(listIDs), subStatus, searchStr, offset, limit); err != nil {
+	if err := tx.Select(&out, stmt, pq.Array(listIDs), subStatus, searchStr, offset, limit, subscriberStatus); err != nil {
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
 	}
@@ -228,11 +241,42 @@ func (c *Core) GetSubscriberActivity(id int) (models.SubscriberActivity, error) 
 	return out, nil
 }
 
+// GetSubscriberCharts returns subscriber views and clicks.
+func (c *Core) GetSubscriberCharts(id int) (types.JSONText, error) {
+	var out types.JSONText
+	if err := c.q.GetSubscriberCharts.Get(&out, id); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError,
+			c.i18n.Ts("globals.messages.errorFetching", "name", "subscriber charts", "error", pqErrMsg(err)))
+	}
+	return out, nil
+}
+
+// DeleteSubscriberActivity deletes a subscriber's campaign views or link clicks.
+func (c *Core) DeleteSubscriberActivity(id int, activityType string) error {
+	var stmt *sqlx.Stmt
+	switch activityType {
+	case "campaign_views":
+		stmt = c.q.DeleteSubscriberCampaignViews
+	case "link_clicks":
+		stmt = c.q.DeleteSubscriberLinkClicks
+	default:
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid activity type.")
+	}
+
+	if _, err := stmt.Exec(id); err != nil {
+		c.log.Printf("error deleting subscriber activity: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError,
+			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.activity}", "error", pqErrMsg(err)))
+	}
+
+	return nil
+}
+
 // ExportSubscribers returns an iterator function that provides lists of subscribers based
 // on the given criteria in an exportable form. The iterator function returned can be called
 // repeatedly until there are nil subscribers. It's an iterator because exports can be extremely
 // large and may have to be fetched in batches from the DB and streamed somewhere.
-func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int, subStatus string, batchSize int) (func() ([]models.SubscriberExport, error), error) {
+func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int, subStatus, subscriberStatus string, batchSize int) (func() ([]models.SubscriberExport, error), error) {
 	if subIDs == nil {
 		subIDs = []int{}
 	}
@@ -246,11 +290,14 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 		cond = query
 	}
 
+	// Handle the special "none" subscription status for orphan subscribers.
+	cond, subStatus = models.ApplyOrphanFilter(cond, subStatus)
+
 	stmt := strings.ReplaceAll(c.q.QuerySubscribersForExport, "%query%", cond)
 
 	// Validate the tables used in the query.
 	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables,
-		pq.Array(listIDs), 0, pq.Array(subIDs), subStatus, searchStr, batchSize); err != nil {
+		pq.Array(listIDs), 0, pq.Array(subIDs), subStatus, searchStr, batchSize, subscriberStatus); err != nil {
 		c.log.Printf("error validating query tables: %v", err)
 		return nil, echo.NewHTTPError(http.StatusBadRequest,
 			c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
@@ -258,7 +305,7 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 
 	// Create a readonly transaction that just does COUNT() to obtain the count of results
 	// and to ensure that the arbitrary query is indeed readonly.
-	if _, err := c.getSubscriberCount(searchStr, cond, subStatus, listIDs); err != nil {
+	if _, err := c.getSubscriberCount(searchStr, cond, subStatus, subscriberStatus, listIDs); err != nil {
 		c.log.Printf("error getting subscriber count: %v", err)
 		return nil, err
 	}
@@ -274,7 +321,7 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 	id := 0
 	return func() ([]models.SubscriberExport, error) {
 		var out []models.SubscriberExport
-		if err := tx.Select(&out, pq.Array(listIDs), id, pq.Array(subIDs), subStatus, searchStr, batchSize); err != nil {
+		if err := tx.Select(&out, pq.Array(listIDs), id, pq.Array(subIDs), subStatus, searchStr, batchSize, subscriberStatus); err != nil {
 			c.log.Printf("error exporting subscribers by query: %v", err)
 			return nil, echo.NewHTTPError(http.StatusInternalServerError,
 				c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -345,7 +392,7 @@ func (c *Core) InsertSubscriber(sub models.Subscriber, listIDs []int, listUUIDs 
 	hasOptin := false
 	if !preconfirm && c.consts.SendOptinConfirmation {
 		// Send a confirmation e-mail (if there are any double opt-in lists).
-		num, err := c.h.SendOptinConfirmation(out, listIDs)
+		num, err := c.sendOptinConfirmation(out, listIDs, assertOptin)
 		if assertOptin && err != nil {
 			return out, hasOptin, err
 		}
@@ -436,7 +483,7 @@ func (c *Core) UpdateSubscriberWithLists(id int, sub models.Subscriber, listIDs 
 	hasOptin := false
 	if !preconfirm && c.consts.SendOptinConfirmation {
 		// Send a confirmation e-mail (if there are any double opt-in lists).
-		num, err := c.h.SendOptinConfirmation(out, listIDs)
+		num, err := c.sendOptinConfirmation(out, listIDs, assertOptin)
 		if assertOptin && err != nil {
 			return out, hasOptin, err
 		}
@@ -458,8 +505,8 @@ func (c *Core) BlocklistSubscribers(subIDs []int) error {
 }
 
 // BlocklistSubscribersByQuery blocklists the given list of subscribers.
-func (c *Core) BlocklistSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus string) error {
-	if err := c.q.ExecSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.BlocklistSubscribersByQuery, listIDs, c.db, subStatus); err != nil {
+func (c *Core) BlocklistSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
+	if err := c.execSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
 		c.log.Printf("error blocklisting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("subscribers.errorBlocklisting", "error", pqErrMsg(err)))
@@ -487,8 +534,8 @@ func (c *Core) DeleteSubscribers(subIDs []int, subUUIDs []string) error {
 }
 
 // DeleteSubscribersByQuery deletes subscribers by a given arbitrary query expression.
-func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus string) error {
-	err := c.q.ExecSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.DeleteSubscribersByQuery, listIDs, c.db, subStatus)
+func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
+	err := c.execSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus)
 	if err != nil {
 		c.log.Printf("error deleting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
@@ -499,8 +546,9 @@ func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []in
 }
 
 // UnsubscribeByCampaign unsubscribes a given subscriber from lists in a given campaign.
-func (c *Core) UnsubscribeByCampaign(subUUID, campUUID string, blocklist bool) error {
-	if _, err := c.q.UnsubscribeByCampaign.Exec(campUUID, subUUID, blocklist); err != nil {
+// If unsubUnconfirmed is true, unsub all unconfirmed subscriptions instead.
+func (c *Core) UnsubscribeByCampaign(subUUID, campUUID string, blocklist, unsubAllUnconfirmed bool) error {
+	if _, err := c.q.UnsubscribeByCampaign.Exec(campUUID, subUUID, blocklist, unsubAllUnconfirmed); err != nil {
 		c.log.Printf("error unsubscribing: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -566,9 +614,10 @@ func (c *Core) DeleteBlocklistedSubscribers() (int, error) {
 	return int(n), nil
 }
 
-func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus string, listIDs []int) (int, error) {
+func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus, subscriberStatus string, listIDs []int) (int, error) {
 	// If there's no condition, it's a "get all" call which can probably be optionally pulled from cache.
-	if queryExp == "" {
+	// The cached stats don't track the subscriber status, so skip the cache when there's a query filter.
+	if queryExp == "" && subscriberStatus == "" {
 		_ = c.refreshCache(matListSubStats, false)
 
 		total := 0
@@ -592,7 +641,7 @@ func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus string, listIDs
 
 	// Execute the readonly query and get the count of results.
 	total := 0
-	if err := tx.Get(&total, stmt, pq.Array(listIDs), subStatus, searchStr); err != nil {
+	if err := tx.Get(&total, stmt, pq.Array(listIDs), subStatus, searchStr, subscriberStatus); err != nil {
 		return 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
 	}
@@ -668,4 +717,91 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 			}
 		}
 	}
+}
+
+// compileSubscriberQueryTpl takes an arbitrary WHERE expressions
+// to filter subscribers from the subscribers table and prepares a query
+// using the raw `query-subscribers-template` template. It sanitizes the
+// query by dry-running it as a read only query.
+func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, subscriberStatus string) (string, error) {
+	// There's an arbitrary query condition.
+	cond := "TRUE"
+	if queryExp != "" {
+		cond = queryExp
+	}
+
+	// Validate before executing the dry run.
+	stmt := strings.ReplaceAll(c.q.QuerySubscribersTpl, "%query%", cond)
+	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
+		return "", err
+	}
+
+	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	// Perform the dry run.
+	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
+		return "", err
+	}
+
+	return stmt, nil
+}
+
+// execSubQueryTpl takes an arbitrary WHERE expressions and a subscriber
+// query template that depends on the filter (eg: delete by query, blocklist by query etc.)
+// combines and executes them.
+func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, subStatus, subscriberStatus string, args ...any) error {
+	queryExp, subStatus = models.ApplyOrphanFilter(queryExp, subStatus)
+
+	// Perform a dry run.
+	filterExp, err := c.compileSubscriberQueryTpl(searchStr, queryExp, subStatus, subscriberStatus)
+	if err != nil {
+		return err
+	}
+
+	if len(listIDs) == 0 {
+		listIDs = []int{}
+	}
+
+	// Insert the subscriber filter query into the target query.
+	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", filterExp)
+
+	// First argument is the boolean indicating if the query is a dry run.
+	a := append([]any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}, args...)
+
+	// Execute the query on the DB.
+	if _, err := c.db.Exec(stmt, a...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// sendOptinConfirmation throttles opt-in mails sent on public subscriptions.
+func (c *Core) sendOptinConfirmation(sub models.Subscriber, listIDs []int, public bool) (int, error) {
+	if public {
+		var pending []int
+		for _, l := range sub.ParsedLists() {
+			if l.Optin == models.ListOptinDouble && l.SubscriptionStatus == models.SubscriptionStatusUnconfirmed {
+				pending = append(pending, l.ID)
+			}
+		}
+		if len(pending) == 0 {
+			return 0, nil
+		}
+
+		// Make the throttle key from the e-mail + the normalized list of pending list IDs
+		// so that new subscriptions don't get throttled.
+		slices.Sort(pending)
+		key := fmt.Sprintf("%s:%v", strings.ToLower(strings.TrimSpace(sub.Email)), pending)
+		if !c.optinThrottle.Insert(key, true) {
+			return len(pending), nil
+		}
+		listIDs = pending
+	}
+
+	return c.h.SendOptinConfirmation(sub, listIDs)
 }

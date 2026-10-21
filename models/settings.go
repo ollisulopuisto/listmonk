@@ -2,13 +2,22 @@ package models
 
 import "gopkg.in/volatiletech/null.v6"
 
+// OIDCRoleMapping maps an exact OIDC claim value to the roles assigned
+// when an OIDC user is automatically created.
+type OIDCRoleMapping struct {
+	Claim      string `json:"claim" koanf:"claim"`
+	Match      string `json:"match" koanf:"match"`
+	UserRoleID *int   `json:"user_role_id,omitempty" koanf:"user_role_id"`
+	ListRoleID *int   `json:"list_role_id,omitempty" koanf:"list_role_id"`
+}
+
 // Settings represents the app settings stored in the DB.
 type Settings struct {
 	AppSiteName                   string   `json:"app.site_name"`
 	AppRootURL                    string   `json:"app.root_url"`
 	AppLogoURL                    string   `json:"app.logo_url"`
 	AppFaviconURL                 string   `json:"app.favicon_url"`
-	AppFromEmail                  string   `json:"app.from_email"`
+	AppFromEmail                  []string `json:"app.from_email"`
 	AppNotifyEmails               []string `json:"app.notify_emails"`
 	AppCampaignSubjectPrefix      string   `json:"app.campaign_subject_prefix"`
 	EnablePublicSubPage           bool     `json:"app.enable_public_subscription_page"`
@@ -55,17 +64,20 @@ type Settings struct {
 	} `json:"security.captcha"`
 
 	OIDC struct {
-		Enabled           bool     `json:"enabled"`
-		ProviderURL       string   `json:"provider_url"`
-		ProviderName      string   `json:"provider_name"`
-		ClientID          string   `json:"client_id"`
-		ClientSecret      string   `json:"client_secret"`
-		AutoCreateUsers   bool     `json:"auto_create_users"`
-		DefaultUserRoleID null.Int `json:"default_user_role_id"`
-		DefaultListRoleID null.Int `json:"default_list_role_id"`
+		Enabled           bool              `json:"enabled"`
+		Logout            bool              `json:"logout"`
+		ProviderURL       string            `json:"provider_url"`
+		ProviderName      string            `json:"provider_name"`
+		ClientID          string            `json:"client_id"`
+		ClientSecret      string            `json:"client_secret"`
+		AutoCreateUsers   bool              `json:"auto_create_users"`
+		DefaultUserRoleID null.Int          `json:"default_user_role_id"`
+		DefaultListRoleID null.Int          `json:"default_list_role_id"`
+		Roles             []OIDCRoleMapping `json:"roles"`
 	} `json:"security.oidc"`
 
-	SecurityTrustedURLs []string `json:"security.trusted_urls"`
+	SecuritySessionDuration string   `json:"security.session_duration"`
+	SecurityTrustedURLs     []string `json:"security.trusted_urls"`
 
 	UploadProvider             string   `json:"upload.provider"`
 	UploadExtensions           []string `json:"upload.extensions"`
@@ -83,24 +95,25 @@ type Settings struct {
 	UploadS3Expiry             string   `json:"upload.s3.expiry"`
 
 	SMTP []struct {
-		Name          string              `json:"name"`
-		UUID          string              `json:"uuid"`
-		Enabled       bool                `json:"enabled"`
-		Host          string              `json:"host"`
-		HelloHostname string              `json:"hello_hostname"`
-		Port          int                 `json:"port"`
-		AuthProtocol  string              `json:"auth_protocol"`
-		Username      string              `json:"username"`
-		Password      string              `json:"password,omitempty"`
-		EmailHeaders  []map[string]string `json:"email_headers"`
-		MaxConns      int                 `json:"max_conns"`
-		MaxMsgRetries int                 `json:"max_msg_retries"`
-		MsgRetryDelay string              `json:"msg_retry_delay"`
-		IdleTimeout   string              `json:"idle_timeout"`
-		WaitTimeout   string              `json:"wait_timeout"`
-		TLSType       string              `json:"tls_type"`
-		TLSSkipVerify bool                `json:"tls_skip_verify"`
-		FromAddresses []string            `json:"from_addresses"`
+		Name               string              `json:"name"`
+		UUID               string              `json:"uuid"`
+		Enabled            bool                `json:"enabled"`
+		Host               string              `json:"host"`
+		HelloHostname      string              `json:"hello_hostname"`
+		Port               int                 `json:"port"`
+		AuthProtocol       string              `json:"auth_protocol"`
+		Username           string              `json:"username"`
+		Password           string              `json:"password,omitempty"`
+		EmailHeaders       []map[string]string `json:"email_headers"`
+		MaxConns           int                 `json:"max_conns"`
+		MaxMsgRetries      int                 `json:"max_msg_retries"`
+		MsgRetryDelay      string              `json:"msg_retry_delay"`
+		IdleTimeout        string              `json:"idle_timeout"`
+		WaitTimeout        string              `json:"wait_timeout"`
+		TLSType            string              `json:"tls_type"`
+		TLSSkipVerify      bool                `json:"tls_skip_verify"`
+		FromAddresses      []string            `json:"from_addresses"`
+		ExcludeFromDefault bool                `json:"exclude_from_default"`
 	} `json:"smtp"`
 
 	Messengers []struct {

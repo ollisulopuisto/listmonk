@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	"github.com/knadh/listmonk/internal/tmptokens"
 	"github.com/knadh/listmonk/internal/utils"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/pquerna/otp/totp"
 	"github.com/zerodha/simplesessions/v3"
 	"gopkg.in/volatiletech/null.v6"
@@ -83,7 +84,7 @@ var (
 )
 
 // LoginPage renders the login page and handles the login form.
-func (a *App) LoginPage(c echo.Context) error {
+func (a *App) LoginPage(c *echo.Context) error {
 	// Has the user been setup?
 	a.Lock()
 	needsUserSetup := a.needsUserSetup
@@ -107,7 +108,7 @@ func (a *App) LoginPage(c echo.Context) error {
 }
 
 // LoginSetupPage renders the first time user login page and handles the login form.
-func (a *App) LoginSetupPage(c echo.Context) error {
+func (a *App) LoginSetupPage(c *echo.Context) error {
 	// Process POST login request.
 	var loginErr error
 	if c.Request().Method == http.MethodPost {
@@ -125,21 +126,15 @@ func (a *App) LoginSetupPage(c echo.Context) error {
 }
 
 // TwofaPage renders the 2FA verification page and handles the 2FA form submission.
-func (a *App) TwofaPage(c echo.Context) error {
-	var (
-		token    string
-		next     string
-		remember bool
-	)
+func (a *App) TwofaPage(c *echo.Context) error {
+	var token, next string
 
 	if c.Request().Method == http.MethodPost {
 		token = strings.TrimSpace(c.FormValue("token"))
 		next = utils.SanitizeURI(c.FormValue("next"))
-		remember = c.FormValue("remember") == "true"
 	} else {
 		token = strings.TrimSpace(c.QueryParam("token"))
 		next = utils.SanitizeURI(c.QueryParam("next"))
-		remember = c.QueryParam("remember") == "true"
 	}
 
 	// If there's no token, redirect.
@@ -159,29 +154,46 @@ func (a *App) TwofaPage(c echo.Context) error {
 
 	userID, ok := data.(int)
 	if !ok {
-		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.invalidRequest"))
+		return a.renderTwofaPage(c, token, next, a.i18n.T("users.invalidRequest"))
 	}
 
 	// Process the 2FA verification POST request.
 	if c.Request().Method == http.MethodPost {
-		return a.doTwofaVerify(c, token, userID, next, remember)
+		return a.doTwofaVerify(c, token, userID, next)
 	}
 
 	// Render the 2FA verification page.
-	return a.renderTwofaPage(c, token, next, remember, "")
+	return a.renderTwofaPage(c, token, next, "")
 }
 
 // Logout logs a user out.
-func (a *App) Logout(c echo.Context) error {
-	// Delete the session from the DB and cookie.
+func (a *App) Logout(c *echo.Context) error {
 	sess := c.Get(auth.SessionKey).(*simplesessions.Session)
+	token, err := sess.String(sess.Get("oidc_token"))
+	if err != nil {
+		a.log.Printf("error reading OIDC session token: %v", err)
+	}
+
+	// Delete the session from the DB and cookie.
 	_ = sess.Destroy()
 
-	return c.JSON(http.StatusOK, okResp{true})
+	// There might be an OIDC logout URL to redirect to.
+	var logoutURL string
+	if err == nil && token != "" {
+		logoutURL, err = a.auth.GetOIDCLogoutURL(token, a.urlCfg.RootURL+uriAdmin+"/login")
+		if err != nil {
+			a.log.Printf("error getting OIDC logout URL: %v", err)
+		}
+	}
+
+	return c.JSON(http.StatusOK, struct {
+		okResp
+		RedirectURL null.String `json:"redirect_url"`
+	}{okResp{true}, null.NewString(logoutURL, logoutURL != "")})
 }
 
 // OIDCLogin initializes an OIDC request and redirects to the OIDC provider for login.
-func (a *App) OIDCLogin(c echo.Context) error {
+func (a *App) OIDCLogin(c *echo.Context) error {
 	// Verify that the request came from the login page (CSRF).
 	nonce, err := c.Cookie("nonce")
 	if err != nil || nonce.Value == "" || nonce.Value != c.FormValue("nonce") {
@@ -203,20 +215,54 @@ func (a *App) OIDCLogin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
 
+	authURL, codeVerifier := a.auth.GetOIDCAuthURL(base64.URLEncoding.EncodeToString(b), nonce.Value)
+
+	if authURL == "" {
+		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
+	}
+
+	// Store the verifier for the callback, or clear a stale cookie if PKCE is disabled.
+	a.setOIDCVerifierCookie(c, codeVerifier)
+
 	// Redirect to the external OIDC provider.
-	return c.Redirect(http.StatusFound, a.auth.GetOIDCAuthURL(base64.URLEncoding.EncodeToString(b), nonce.Value))
+	return c.Redirect(http.StatusFound, authURL)
+}
+
+// setOIDCVerifierCookie stores the PKCE verifier or deletes it if it's empty.
+func (a *App) setOIDCVerifierCookie(c *echo.Context, verifier string) {
+	ck := &http.Cookie{
+		Name:     "oidc_code_verifier",
+		Value:    verifier,
+		HttpOnly: true,
+		Secure:   strings.HasPrefix(a.urlCfg.RootURL, "https://"),
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	if verifier == "" {
+		ck.MaxAge = -1
+	}
+
+	c.SetCookie(ck)
 }
 
 // OIDCFinish receives the redirect callback from the OIDC provider and completes the handshake.
-func (a *App) OIDCFinish(c echo.Context) error {
+func (a *App) OIDCFinish(c *echo.Context) error {
 	// Verify that the request actually originated from the login request (which sets the nonce value).
 	nonce, err := c.Cookie("nonce")
 	if err != nil || nonce.Value == "" {
 		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusUnauthorized, a.i18n.T("users.invalidRequest")))
 	}
 
+	// Get the PKCE code verifier set on the login request, if any, and clear it as it's single-use.
+	codeVerifier := ""
+	if ck, err := c.Cookie("oidc_code_verifier"); err == nil {
+		codeVerifier = ck.Value
+		a.setOIDCVerifierCookie(c, "")
+	}
+
 	// Validate the OIDC token.
-	oidcToken, claims, err := a.auth.ExchangeOIDCToken(c.Request().URL.Query().Get("code"), nonce.Value)
+	oidcToken, claims, err := a.auth.ExchangeOIDCToken(c.Request().URL.Query().Get("code"), nonce.Value, codeVerifier)
 	if err != nil {
 		return a.renderLoginPage(c, err)
 	}
@@ -264,13 +310,18 @@ func (a *App) OIDCFinish(c echo.Context) error {
 		}
 	}
 
+	// Disallow disabld users from logging in via OIDC.
+	if user.Status != auth.UserStatusEnabled {
+		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
+	}
+
 	// Update the user login state (avatar, logged in date) in the DB.
 	if err := a.core.UpdateUserLogin(user.ID, claims.Picture); err != nil {
 		return a.renderLoginPage(c, err)
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, oidcToken, c, true); err != nil {
+	if err := a.auth.SaveSession(user, oidcToken, c); err != nil {
 		return a.renderLoginPage(c, err)
 	}
 
@@ -279,7 +330,7 @@ func (a *App) OIDCFinish(c echo.Context) error {
 }
 
 // ForgotPage renders the forgot password page and handles the forgot password form.
-func (a *App) ForgotPage(c echo.Context) error {
+func (a *App) ForgotPage(c *echo.Context) error {
 	// Process the forgot password request.
 	if c.Request().Method == http.MethodPost {
 		return a.doForgotPassword(c)
@@ -291,7 +342,7 @@ func (a *App) ForgotPage(c echo.Context) error {
 }
 
 // ResetPage renders the reset password page and handles the reset password form.
-func (a *App) ResetPage(c echo.Context) error {
+func (a *App) ResetPage(c *echo.Context) error {
 	var (
 		token = strings.TrimSpace(c.QueryParam("token"))
 		email = strings.ToLower(strings.TrimSpace(c.QueryParam("email")))
@@ -324,7 +375,7 @@ func (a *App) ResetPage(c echo.Context) error {
 }
 
 // renderLoginPage renders the login page and handles the login form.
-func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
+func (a *App) renderLoginPage(c *echo.Context, loginErr error) error {
 	next := utils.SanitizeURI(c.FormValue("next"))
 	if next == "/" {
 		next = uriAdmin
@@ -363,7 +414,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 	}
 
 	out := loginTpl{
-		Title:            a.i18n.T("users.login"),
+		Title:            a.i18n.T("globals.buttons.login"),
 		PasswordEnabled:  true,
 		OIDCProvider:     oidcProviderName,
 		OIDCProviderLogo: oidcLogo,
@@ -373,7 +424,7 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 	// If there was an error in the previous state (POST reqest), set it to render in the template.
 	if loginErr != nil {
 		if e, ok := loginErr.(*echo.HTTPError); ok {
-			out.Error = e.Message.(string)
+			out.Error = e.Message
 		} else {
 			out.Error = loginErr.Error()
 		}
@@ -399,14 +450,14 @@ func (a *App) renderLoginPage(c echo.Context, loginErr error) error {
 }
 
 // renderLoginSetupPage renders the first time user setup page.
-func (a *App) renderLoginSetupPage(c echo.Context, loginErr error) error {
+func (a *App) renderLoginSetupPage(c *echo.Context, loginErr error) error {
 	next := utils.SanitizeURI(c.FormValue("next"))
 	if next == "/" {
 		next = uriAdmin
 	}
 
 	out := loginTpl{
-		Title:           a.i18n.T("users.login"),
+		Title:           a.i18n.T("globals.buttons.login"),
 		PasswordEnabled: true,
 		NextURI:         next,
 	}
@@ -414,7 +465,7 @@ func (a *App) renderLoginSetupPage(c echo.Context, loginErr error) error {
 	// If there was an error in the previous state (POST reqest), set it to render in the template.
 	if loginErr != nil {
 		if e, ok := loginErr.(*echo.HTTPError); ok {
-			out.Error = e.Message.(string)
+			out.Error = e.Message
 		} else {
 			out.Error = loginErr.Error()
 		}
@@ -424,7 +475,7 @@ func (a *App) renderLoginSetupPage(c echo.Context, loginErr error) error {
 }
 
 // createOIDCUser creates a new user in the DB with the OIDC claims.
-func (a *App) createOIDCUser(claims auth.OIDCclaim, c echo.Context) (auth.User, error) {
+func (a *App) createOIDCUser(claims auth.OIDCclaim, c *echo.Context) (auth.User, error) {
 	name := claims.Name
 	if name == "" {
 		name = strings.TrimSpace(claims.PreferredUsername)
@@ -433,9 +484,16 @@ func (a *App) createOIDCUser(claims auth.OIDCclaim, c echo.Context) (auth.User, 
 		name = strings.Split(claims.Email, "@")[0]
 	}
 
+	userRoleID, claimListRoleID := resolveOIDCRoles(
+		claims.RawClaims,
+		a.cfg.Security.OIDC.Roles,
+		a.cfg.Security.OIDC.DefaultUserRoleID,
+		a.cfg.Security.OIDC.DefaultListRoleID,
+	)
+
 	var listRoleID *int
-	if a.cfg.Security.OIDC.DefaultListRoleID > 0 {
-		listRoleID = &a.cfg.Security.OIDC.DefaultListRoleID
+	if claimListRoleID > 0 {
+		listRoleID = &claimListRoleID
 	}
 
 	user, err := a.core.CreateUser(auth.User{
@@ -445,7 +503,7 @@ func (a *App) createOIDCUser(claims auth.OIDCclaim, c echo.Context) (auth.User, 
 		Username:      claims.Email,
 		Name:          name,
 		Email:         null.NewString(claims.Email, true),
-		UserRoleID:    a.cfg.Security.OIDC.DefaultUserRoleID,
+		UserRoleID:    userRoleID,
 		ListRoleID:    listRoleID,
 		Status:        auth.UserStatusEnabled,
 	})
@@ -454,12 +512,11 @@ func (a *App) createOIDCUser(claims auth.OIDCclaim, c echo.Context) (auth.User, 
 }
 
 // doLogin logs a user in with a username and password.
-func (a *App) doLogin(c echo.Context) error {
+func (a *App) doLogin(c *echo.Context) error {
 	var (
 		startTime = time.Now()
 		username  = strings.TrimSpace(c.FormValue("username"))
 		password  = strings.TrimSpace(c.FormValue("password"))
-		remember  = c.FormValue("remember") == "true"
 	)
 
 	// Ensure timing mitigation is applied regardless of early returns
@@ -496,11 +553,11 @@ func (a *App) doLogin(c echo.Context) error {
 
 		// Redirect to 2FA page.
 		next := utils.SanitizeURI(c.FormValue("next"))
-		return c.Redirect(http.StatusFound, fmt.Sprintf("%s/login/twofa?token=%s&next=%s&remember=%v", uriAdmin, token, url.QueryEscape(next), remember))
+		return c.Redirect(http.StatusFound, fmt.Sprintf("%s/login/twofa?token=%s&next=%s", uriAdmin, token, url.QueryEscape(next)))
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, "", c, remember); err != nil {
+	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
 	}
 
@@ -508,7 +565,7 @@ func (a *App) doLogin(c echo.Context) error {
 }
 
 // doFirstTimeSetup sets a user up for the first time.
-func (a *App) doFirstTimeSetup(c echo.Context) error {
+func (a *App) doFirstTimeSetup(c *echo.Context) error {
 	var (
 		email     = strings.TrimSpace(c.FormValue("email"))
 		username  = strings.TrimSpace(c.FormValue("username"))
@@ -567,7 +624,7 @@ func (a *App) doFirstTimeSetup(c echo.Context) error {
 	}
 
 	// Set the session in the DB and cookie.
-	if err := a.auth.SaveSession(user, "", c, true); err != nil {
+	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
 	}
 
@@ -575,7 +632,7 @@ func (a *App) doFirstTimeSetup(c echo.Context) error {
 }
 
 // renderResetPasswordPage renders the reset password page.
-func (a *App) renderResetPasswordPage(c echo.Context, token, email, errMsg string) error {
+func (a *App) renderResetPasswordPage(c *echo.Context, token, email, errMsg string) error {
 	out := resetPasswordTpl{
 		Title: a.i18n.T("users.resetPassword"),
 		Token: token,
@@ -586,7 +643,7 @@ func (a *App) renderResetPasswordPage(c echo.Context, token, email, errMsg strin
 }
 
 // doForgotPassword handles the forgot password form submission.
-func (a *App) doForgotPassword(c echo.Context) error {
+func (a *App) doForgotPassword(c *echo.Context) error {
 	var (
 		email = strings.ToLower(strings.TrimSpace(c.FormValue("email")))
 	)
@@ -653,7 +710,7 @@ func (a *App) doForgotPassword(c echo.Context) error {
 }
 
 // doResetPassword handles the reset password form submission.
-func (a *App) doResetPassword(c echo.Context, token, email string) error {
+func (a *App) doResetPassword(c *echo.Context, token, email string) error {
 	var (
 		password  = c.FormValue("password")
 		password2 = c.FormValue("password2")
@@ -701,7 +758,7 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 	}
 
 	// Log the user in directly without forcing a manual login right after password change.
-	if err := a.auth.SaveSession(user, "", c, false); err != nil {
+	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
 	}
 
@@ -710,49 +767,48 @@ func (a *App) doResetPassword(c echo.Context, token, email string) error {
 }
 
 // renderTwofaPage renders the 2FA verification page.
-func (a *App) renderTwofaPage(c echo.Context, token, next string, remember bool, errMsg string) error {
+func (a *App) renderTwofaPage(c *echo.Context, token, next, errMsg string) error {
 	out := twofaTpl{
 		Title:       a.i18n.T("users.twoFA"),
 		Description: "",
 		Token:       token,
 		NextURI:     next,
-		Remember:    remember,
 		Error:       errMsg,
 	}
 	return c.Render(http.StatusOK, "admin-twofa", out)
 }
 
 // doTwofaVerify handles the 2FA verification form submission.
-func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next string, remember bool) error {
+func (a *App) doTwofaVerify(c *echo.Context, token string, userID int, next string) error {
 	totpCode := strings.TrimSpace(c.FormValue("totp_code"))
 
 	// Validate.
 	if !strHasLen(totpCode, 6, 6) {
-		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("globals.messages.invalidValue"))
+		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
 	}
 
 	// Get the user.
 	user, err := a.core.GetUser(userID, "", "")
 	if err != nil {
-		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.invalidRequest"))
+		return a.renderTwofaPage(c, token, next, a.i18n.T("users.invalidRequest"))
 	}
 
 	// Verify that TOTP is actually enabled for the user.
 	if user.TwofaType != models.TwofaTypeTOTP {
-		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("users.twoFANotEnabled"))
+		return a.renderTwofaPage(c, token, next, a.i18n.T("users.twoFANotEnabled"))
 	}
 
 	// Verify the TOTP code.
 	valid := totp.Validate(totpCode, user.TwofaKey.String)
 	if !valid {
-		return a.renderTwofaPage(c, token, next, remember, a.i18n.T("globals.messages.invalidValue"))
+		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
 	}
 
 	// Invalidate the token.
 	tmptokens.Delete(token)
 
 	// Set the session.
-	if err := a.auth.SaveSession(user, "", c, remember); err != nil {
+	if err := a.auth.SaveSession(user, "", c); err != nil {
 		return err
 	}
 
@@ -761,7 +817,7 @@ func (a *App) doTwofaVerify(c echo.Context, token string, userID int, next strin
 }
 
 // GenerateTOTPQR generates a TOTP QR code for a user to scan with their authenticator app.
-func (a *App) GenerateTOTPQR(c echo.Context) error {
+func (a *App) GenerateTOTPQR(c *echo.Context) error {
 	u := c.Get(auth.UserHTTPCtxKey).(auth.User)
 
 	// If TOTP is already enabled, don't generate a new key.
@@ -800,4 +856,88 @@ func (a *App) GenerateTOTPQR(c echo.Context) error {
 		Secret: key.Secret(),
 		QR:     base64.StdEncoding.EncodeToString(buf.Bytes()),
 	}})
+}
+
+// resolveOIDCRoles applies the first matching mapping, retaining defaults for omitted roles.
+func resolveOIDCRoles(claims map[string]json.RawMessage, roles []models.OIDCRoleMapping, userRoleID, listRoleID int) (int, int) {
+	for _, m := range roles {
+		if !oidcClaimMatches(claims[m.Claim], m.Match) {
+			continue
+		}
+
+		if m.UserRoleID != nil {
+			userRoleID = *m.UserRoleID
+		}
+
+		if m.ListRoleID != nil {
+			listRoleID = *m.ListRoleID
+		}
+
+		break
+	}
+
+	return userRoleID, listRoleID
+}
+
+// oidcClaimMatches accepts only strings and arrays containing exclusively strings.
+func oidcClaimMatches(raw json.RawMessage, expected string) bool {
+	var claim any
+	if err := json.Unmarshal(raw, &claim); err != nil {
+		return false
+	}
+
+	switch v := claim.(type) {
+	case string:
+		return v == expected
+	case []any:
+		matched := false
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return false
+			}
+			matched = matched || s == expected
+		}
+
+		return matched
+	}
+
+	return false
+}
+
+// validateOIDCRoles checks mapping fields and references to each role type.
+func validateOIDCRoles(roles []models.OIDCRoleMapping, userRoles []auth.Role, listRoles []auth.ListRole) error {
+	for i, m := range roles {
+		var msg string
+		switch {
+		case m.Claim == "":
+			msg = "claim is required"
+		case m.Match == "":
+			msg = "match is required"
+		case m.UserRoleID != nil && !slices.ContainsFunc(userRoles, func(r auth.Role) bool { return r.ID == *m.UserRoleID }):
+			msg = fmt.Sprintf("user role ID %d does not exist", *m.UserRoleID)
+		case m.ListRoleID != nil && !slices.ContainsFunc(listRoles, func(r auth.ListRole) bool { return r.ID == *m.ListRoleID }):
+			msg = fmt.Sprintf("list role ID %d does not exist", *m.ListRoleID)
+		}
+
+		if msg != "" {
+			return fmt.Errorf("OIDC role mapping %d: %s", i+1, msg)
+		}
+	}
+
+	return nil
+}
+
+// validateOIDCSettings checks defaults even when automatic user creation is disabled.
+func validateOIDCSettings(set models.Settings, userRoles []auth.Role, listRoles []auth.ListRole) error {
+	o := set.OIDC
+	if o.AutoCreateUsers || o.DefaultUserRoleID.Valid {
+		if !o.DefaultUserRoleID.Valid || !slices.ContainsFunc(userRoles, func(r auth.Role) bool { return r.ID == o.DefaultUserRoleID.Int }) {
+			return fmt.Errorf("OIDC default user role ID %d does not exist", o.DefaultUserRoleID.Int)
+		}
+	}
+	if o.DefaultListRoleID.Valid && !slices.ContainsFunc(listRoles, func(r auth.ListRole) bool { return r.ID == o.DefaultListRoleID.Int }) {
+		return fmt.Errorf("OIDC default list role ID %d does not exist", o.DefaultListRoleID.Int)
+	}
+	return validateOIDCRoles(o.Roles, userRoles, listRoles)
 }

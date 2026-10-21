@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Calendar Versioning](https://calver.org/).
 
+## [v26.10.21.2387] - 2026-10-21
+
+### Changed
+- Upstream sync: Migrated codebase to upstream `v7.0.0-beta.1` SSR architecture.
+- Replaced Vue frontend with Go server-side rendered (SSR) templates, Alpine.js, and Oat UI (`static/admin/`).
+- Updated Dockerfile to multi-stage build using `oven/bun` for SSR admin bundle and Go 1.27 backend.
+- Updated CI/CD workflows (`deploy.yml`, `upstream-sync.yml`) for Go 1.27 and Bun asset compilation.
+- Preserved fork features: `emailmd` content type in SSR templates and backend, campaign subject prefix (`app.campaign_subject_prefix` and per-list `subject_prefix`), media permission isolation, Finnish translations, and database migrations (`v6.3.0`, `v6.4.0`, `v6.5.0`, `v7.0.0`).
+
 ## [v26.10.05.2164] - 2026-10-05
 
 ### Fixed

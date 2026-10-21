@@ -1,0 +1,10 @@
+{{ define "admin-media" -}}
+{{ template "admin-header" . }}
+{{ template "breadcrumbs" dict "Root" . "Current" .Data.Title "Parents" (list (dict "Label" (.L.T "globals.terms.campaigns") "URL" (URI "/admin/campaigns") "CanLink" (.Data.Can "campaigns:get" "campaigns:get_all"))) }}
+
+{{ template "media-gallery" dict "Root" . "Mode" "manage" }}
+
+<script type="module" src="{{ URI "/admin/static/js/views/media.js" }}?v={{ .AssetVersion }}" defer></script>
+
+{{ template "admin-footer" . -}}
+{{ end }}

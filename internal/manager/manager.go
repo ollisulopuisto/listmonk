@@ -47,8 +47,8 @@ const (
 // Store represents a data backend, such as a database,
 // that provides subscriber and campaign records.
 type Store interface {
-	NextCampaigns(currentIDs []int64, sentCounts []int64) ([]*models.Campaign, error)
-	NextSubscribers(campID, limit int) ([]models.Subscriber, error)
+	NextCampaigns(currentIDs []int64, sentCounts []int64, lastSubIDs []int64) ([]*models.Campaign, error)
+	NextSubscribers(campID, lastFetchedID, limit int) ([]models.Subscriber, error)
 	GetCampaign(campID int) (*models.Campaign, error)
 	GetAttachment(mediaID int) (models.Attachment, error)
 	GetInlineAttachmentByFilename(filename string) (models.Attachment, string, error)
@@ -72,6 +72,7 @@ type Messenger interface {
 // CampStats contains campaign stats like per minute send rate.
 type CampStats struct {
 	SendRate int
+	Sent     int
 }
 
 // Manager handles the scheduling, processing, and queuing of campaigns
@@ -87,6 +88,9 @@ type Manager struct {
 	// Campaigns that are currently running.
 	pipes    map[int]*pipe
 	pipesMut sync.RWMutex
+
+	// Mutex for tracking periodic count sync to the DB.
+	countsMut sync.Mutex
 
 	tpls    map[int]*models.Template
 	tplsMut sync.RWMutex
@@ -264,15 +268,16 @@ func (m *Manager) HasRunningCampaigns() bool {
 
 // GetCampaignStats returns campaign statistics.
 func (m *Manager) GetCampaignStats(id int) CampStats {
-	n := 0
+	stats := CampStats{}
 
 	m.pipesMut.Lock()
 	if c, ok := m.pipes[id]; ok {
-		n = int(c.rate.Rate())
+		stats.SendRate = int(c.rate.Rate())
+		stats.Sent = int(c.totalSent.Load())
 	}
 	m.pipesMut.Unlock()
 
-	return CampStats{SendRate: n}
+	return stats
 }
 
 // Run is a blocking function (that should be invoked as a goroutine)
@@ -455,8 +460,7 @@ func (m *Manager) scanCampaigns(tick time.Duration) {
 
 	// Periodically scan the data source for campaigns to process.
 	for range t.C {
-		ids, counts := m.getCurrentCampaigns()
-		campaigns, err := m.store.NextCampaigns(ids, counts)
+		campaigns, err := m.nextCampaigns()
 		if err != nil {
 			m.log.Printf("error fetching campaigns: %v", err)
 			continue
@@ -555,21 +559,22 @@ func (m *Manager) worker() {
 
 			// Increment the send rate or the error counter if there was an error.
 			if msg.pipe != nil {
-				// Mark the message as done.
-				msg.pipe.wg.Done()
-
 				if err != nil {
 					// Call the error callback, which keeps track of the error count
 					// and stops the campaign if the error count exceeds the threshold.
 					msg.pipe.OnError()
 				} else {
-					id := uint64(msg.Subscriber.ID)
-					if id > msg.pipe.lastID.Load() {
-						msg.pipe.lastID.Store(uint64(msg.Subscriber.ID))
-					}
 					msg.pipe.rate.Incr(1)
 					msg.pipe.sent.Add(1)
+					msg.pipe.totalSent.Add(1)
 				}
+
+				// Retain failed sends only when stopped, allowing retry on resume.
+				// Otherwise, send errors are considered processed and are not retried.
+				if err == nil || !msg.pipe.stopped.Load() {
+					msg.pipe.completeSub(msg.Subscriber.ID)
+				}
+				msg.pipe.wg.Done()
 			}
 
 		// Arbitrary message.
@@ -586,27 +591,33 @@ func (m *Manager) worker() {
 	}
 }
 
-// getCurrentCampaigns returns the IDs of campaigns currently being processed
-// and their sent counts.
-func (m *Manager) getCurrentCampaigns() ([]int64, []int64) {
-	// Needs to return an empty slice in case there are no campaigns.
-	m.pipesMut.RLock()
-	defer m.pipesMut.RUnlock()
+// nextCampaigns fetches new campaigns while updating stats.
+func (m *Manager) nextCampaigns() ([]*models.Campaign, error) {
+	m.countsMut.Lock()
+	defer m.countsMut.Unlock()
 
+	m.pipesMut.RLock()
+
+	// Needs to pass empty slices in case there are no campaigns.
 	var (
-		ids    = make([]int64, 0, len(m.pipes))
-		counts = make([]int64, 0, len(m.pipes))
+		ids     = make([]int64, 0, len(m.pipes))
+		counts  = make([]int64, 0, len(m.pipes))
+		lastIDs = make([]int64, 0, len(m.pipes))
 	)
 	for _, p := range m.pipes {
 		ids = append(ids, int64(p.camp.ID))
+		lastIDs = append(lastIDs, int64(p.getCheckpoint()))
 
 		// Get the sent counts for campaigns and reset them to 0
 		// as in the database, they're stored cumulatively (sent += $newSent).
-		counts = append(counts, p.sent.Load())
-		p.sent.Store(0)
+		counts = append(counts, p.sent.Swap(0))
 	}
 
-	return ids, counts
+	m.pipesMut.RUnlock()
+
+	// A returned error does not guarantee the writes in the query were rolled back.
+	// The sent count shouldn't be restored, which could result in double sends.
+	return m.store.NextCampaigns(ids, counts, lastIDs)
 }
 
 // trackLink register a URL and return its UUID to be used in message templates

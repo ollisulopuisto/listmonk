@@ -32,14 +32,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5.3.0
         with:
-          go-version: '1.26.1'
+          go-version: '1.27'
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '24'
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
+          bun-version: 1.4.3
 
       - name: Fetch upstream master
         run: |
@@ -87,21 +85,6 @@ jobs:
 
           echo "Merge completed cleanly. Running integrity checks..."
 
-          # Check for TinyMCE re-introduction
-          if grep -rn "tinymce" frontend/src/; then
-            echo "::error::TinyMCE detected in frontend/src after upstream merge!"
-            git checkout -b "$SYNC_BRANCH"
-            git push origin "$SYNC_BRANCH"
-
-            gh pr create --repo ollisulopuisto/listmonk \
-              --base master \
-              --head "$SYNC_BRANCH" \
-              --title "sync: TinyMCE detected in upstream changes ($DATE_TAG)" \
-              --body "Upstream changes reintroduced TinyMCE into \`frontend/src\`. Manual review required to preserve Tiptap editor integrity."
-
-            exit 1
-          fi
-
           echo "Running Go tests..."
           if ! go test ./...; then
             echo "::error::Go tests failed after merging upstream/master."
@@ -117,17 +100,20 @@ jobs:
             exit 1
           fi
 
-          echo "Running frontend dependencies, lint, and tests..."
-          if ! (cd frontend && yarn install --frozen-lockfile && yarn lint && yarn test && yarn build); then
-            echo "::error::Frontend checks/build failed after merging upstream/master."
+          echo "Running SSR admin frontend dependencies and build..."
+          if ! (cd static/admin && bun install --frozen-lockfile && bun run build); then
+            echo "::error::SSR admin frontend build failed after merging upstream/master."
             git checkout -b "$SYNC_BRANCH"
             git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
               --base master \
               --head "$SYNC_BRANCH" \
-              --title "sync: Frontend check/build failure after upstream merge ($DATE_TAG)" \
-              --body "Frontend lint, test, or build failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
+              --title "sync: Frontend build failure after upstream merge ($DATE_TAG)" \
+              --body "SSR admin frontend build failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
+
+            exit 1
+          fi
 
             exit 1
           fi

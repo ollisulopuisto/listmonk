@@ -14,17 +14,16 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/knadh/listmonk/internal/i18n"
+	"github.com/knadh/listmonk/internal/throttle"
 	"github.com/knadh/listmonk/models"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/lib/pq"
 )
 
 const (
-	SortAsc  = "asc"
-	SortDesc = "desc"
-
 	matDashboardCharts = "mat_dashboard_charts"
 	matDashboardCounts = "mat_dashboard_counts"
+	matListCharts      = "mat_list_charts"
 	matListSubStats    = "mat_list_subscriber_stats"
 )
 
@@ -32,11 +31,12 @@ const (
 type Core struct {
 	h *Hooks
 
-	consts Constants
-	i18n   *i18n.I18n
-	db     *sqlx.DB
-	q      *models.Queries
-	log    *log.Logger
+	consts        Constants
+	optinThrottle *throttle.Throttle
+	i18n          *i18n.I18n
+	db            *sqlx.DB
+	q             *models.Queries
+	log           *log.Logger
 }
 
 // Constants represents constant config.
@@ -68,28 +68,31 @@ var (
 )
 
 var (
-	regexFullTextQuery  = regexp.MustCompile(`\s+`)
-	regexpSpaces        = regexp.MustCompile(`[\s]+`)
-	campQuerySortFields = []string{"name", "status", "created_at", "updated_at"}
-	subQuerySortFields  = []string{"email", "status", "name", "created_at", "updated_at"}
-	listQuerySortFields = []string{"name", "status", "created_at", "updated_at", "subscriber_count"}
+	regexpSpaces            = regexp.MustCompile(`[\s]+`)
+	campQuerySortFields     = []string{"name", "status", models.FieldCreatedAt, "updated_at", "started_at", "send_at"}
+	subQuerySortFields      = []string{"email", "status", "name", models.FieldCreatedAt, "updated_at"}
+	userQuerySortFields     = []string{"username", "email", models.FieldCreatedAt, "loggedin_at"}
+	roleQuerySortFields     = []string{"name", models.FieldCreatedAt, "updated_at"}
+	templateQuerySortFields = []string{"name", "type", models.FieldCreatedAt, "updated_at"}
+	listQuerySortFields     = []string{"name", "status", models.FieldCreatedAt, "updated_at", "subscriber_count"}
 )
 
 // New returns a new instance of the core.
 func New(o *Opt, h *Hooks) *Core {
 	return &Core{
-		h:      h,
-		consts: o.Constants,
-		i18n:   o.I18n,
-		db:     o.DB,
-		q:      o.Queries,
-		log:    o.Log,
+		h:             h,
+		consts:        o.Constants,
+		optinThrottle: throttle.New(optinThrottleTTL, optinThrottleCap),
+		i18n:          o.I18n,
+		db:            o.DB,
+		q:             o.Queries,
+		log:           o.Log,
 	}
 }
 
 // RefreshMatViews refreshes all materialized views.
 func (c *Core) RefreshMatViews(concurrent bool) error {
-	for _, v := range []string{matDashboardCharts, matDashboardCounts, matListSubStats} {
+	for _, v := range []string{matDashboardCharts, matDashboardCounts, matListSubStats, matListCharts} {
 		_ = c.RefreshMatView(v, true)
 	}
 	return nil
@@ -140,10 +143,10 @@ func makeSearchQuery(searchStr, orderBy, order, query string, querySortFields []
 
 	// Sort params.
 	if !strSliceContains(orderBy, querySortFields) {
-		orderBy = "created_at"
+		orderBy = models.FieldCreatedAt
 	}
-	if order != SortAsc && order != SortDesc {
-		order = SortDesc
+	if order != models.OrderAsc && order != models.OrderDesc {
+		order = models.OrderDesc
 	}
 
 	query = strings.ReplaceAll(query, "%order%", orderBy+" "+order)
@@ -151,12 +154,12 @@ func makeSearchQuery(searchStr, orderBy, order, query string, querySortFields []
 	return searchStr, query
 }
 
-// makeSearchString prepares a search string for use in both tsquery and ILIKE queries.
+// makeSearchString normalizes a search string for use in SQL search queries.
 func makeSearchString(searchStr string) string {
 	if searchStr == "" {
 		return ""
 	}
-	return `%` + string(regexFullTextQuery.ReplaceAll([]byte(searchStr), []byte("&"))) + `%`
+	return regexpSpaces.ReplaceAllString(strings.TrimSpace(searchStr), " ")
 }
 
 // strSliceContains checks if a string is present in the string slice.
