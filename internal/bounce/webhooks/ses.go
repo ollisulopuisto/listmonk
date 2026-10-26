@@ -25,6 +25,9 @@ import (
 // https://sns.ap-southeast-1.amazonaws.com/SimpleNotificationService-010a507c1833636cd94bdb98bd93083a.pem
 var sesRegCertURL = regexp.MustCompile(`(?i)^https://sns\.[a-z0-9\-]+\.amazonaws\.com(\.cn)?/SimpleNotificationService\-[a-z0-9]+\.pem$`)
 
+// sesRegSubscribeURL validates the URL in the SubscribeURL and UnsubscribeURL fields.
+var sesRegSubscribeURL = regexp.MustCompile(`(?i)^https://sns\.[a-z0-9\-]+\.amazonaws\.com(\.cn)?/`)
+
 // sesNotif is an individual notification wrapper posted by SNS.
 type sesNotif struct {
 	// Message may be a plaintext message or a stringified JSON payload based on the message type.
@@ -92,6 +95,10 @@ func (s *SES) ProcessSubscription(b []byte) error {
 	u := n.SubscribeURL
 	if n.Type == "UnsubscriptionConfirmation" {
 		u = n.UnsubscribeURL
+	}
+
+	if !sesRegSubscribeURL.MatchString(u) {
+		return fmt.Errorf("invalid SNS subscription URL: %v", u)
 	}
 
 	resp, err := http.Get(u)
