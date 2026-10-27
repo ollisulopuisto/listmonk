@@ -70,8 +70,13 @@ jobs:
             echo "::error::Merge conflict encountered when merging upstream/master."
             git merge --abort || true
 
-            # Create branch from upstream/master for manual resolution PR
-            git checkout -b "$SYNC_BRANCH" upstream/master
+            # Create branch from master and merge upstream/master preserving fork workflows
+            git checkout -b "$SYNC_BRANCH" origin/master
+            git merge upstream/master --no-edit -m "Merge upstream/master ($DATE_TAG) — sync upstream changes" || true
+            git checkout origin/master -- .github/workflows/
+            git clean -fd .github/workflows/
+            git add -A
+            git commit -m "sync: upstream/master merge conflict ($DATE_TAG)" || true
             git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
@@ -89,6 +94,9 @@ jobs:
           if ! go test ./...; then
             echo "::error::Go tests failed after merging upstream/master."
             git checkout -b "$SYNC_BRANCH"
+            git checkout origin/master -- .github/workflows/
+            git clean -fd .github/workflows/
+            git commit -am "sync: Go test failure after upstream merge ($DATE_TAG)" || true
             git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
@@ -104,6 +112,9 @@ jobs:
           if ! (cd static/admin && bun install --frozen-lockfile && bun run build); then
             echo "::error::SSR admin frontend build failed after merging upstream/master."
             git checkout -b "$SYNC_BRANCH"
+            git checkout origin/master -- .github/workflows/
+            git clean -fd .github/workflows/
+            git commit -am "sync: Frontend build failure after upstream merge ($DATE_TAG)" || true
             git push origin "$SYNC_BRANCH"
 
             gh pr create --repo ollisulopuisto/listmonk \
@@ -111,9 +122,6 @@ jobs:
               --head "$SYNC_BRANCH" \
               --title "sync: Frontend build failure after upstream merge ($DATE_TAG)" \
               --body "SSR admin frontend build failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
-
-            exit 1
-          fi
 
             exit 1
           fi
