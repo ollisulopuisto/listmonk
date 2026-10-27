@@ -2,11 +2,8 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +19,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/zerodha/simplesessions/stores/postgres/v3"
 	"github.com/zerodha/simplesessions/v3"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 )
 
@@ -154,7 +152,7 @@ func (o *Auth) GetAPIToken(user string, token string) (User, bool) {
 	t, ok := o.apiUsers[user]
 	o.RUnlock()
 
-	if !ok || subtle.ConstantTimeCompare([]byte(t.Password.String), []byte(HashAPIToken(token))) != 1 {
+	if !ok || bcrypt.CompareHashAndPassword([]byte(t.Password.String), []byte(token)) != nil {
 		return User{}, false
 	}
 
@@ -493,11 +491,13 @@ func GetSessionID(c *echo.Context) string {
 	return sess.ID()
 }
 
-// HashAPIToken returns the SHA-256 hex digest of an API token.
+// HashAPIToken returns the bcrypt hash of an API token.
 func HashAPIToken(token string) string {
-	h := sha256.New()
-	h.Write([]byte(token))
-	return hex.EncodeToString(h.Sum(nil))
+	hash, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
+	if err != nil {
+		return ""
+	}
+	return string(hash)
 }
 
 // validateSession checks if the cookie session is valid (in the DB) and returns the session and user details.
