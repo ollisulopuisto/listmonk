@@ -115,11 +115,16 @@ func (c *Core) GetSubscribersByEmail(emails []string) (models.Subscribers, error
 // QuerySubscribers queries and returns paginated subscrribers based on the given params including the total count.
 func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string, order, orderBy string, offset, limit int) (models.Subscribers, int, error) {
 	// Sort params.
-	if !strSliceContains(orderBy, subQuerySortFields) {
-		orderBy = "subscribers.id"
+	cleanOrderBy := "subscribers.id"
+	for _, f := range subQuerySortFields {
+		if f == orderBy {
+			cleanOrderBy = f
+			break
+		}
 	}
-	if order != models.OrderAsc && order != models.OrderDesc {
-		order = models.OrderDesc
+	cleanOrder := models.OrderDesc
+	if order == models.OrderAsc {
+		cleanOrder = models.OrderAsc
 	}
 
 	// Required for pq.Array()
@@ -138,7 +143,7 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 
 	// stmt is the raw SQL query.
 	stmt := strings.ReplaceAll(c.q.QuerySubscribers, "%query%", cond)
-	stmt = strings.ReplaceAll(stmt, "%order%", orderBy+" "+order)
+	stmt = strings.ReplaceAll(stmt, "%order%", cleanOrderBy+" "+cleanOrder)
 
 	// Validate the tables used in the query.
 	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, pq.Array(listIDs), subStatus, searchStr, offset, limit, subscriberStatus); err != nil {

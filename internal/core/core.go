@@ -142,14 +142,20 @@ func makeSearchQuery(searchStr, orderBy, order, query string, querySortFields []
 	searchStr = makeSearchString(searchStr)
 
 	// Sort params.
-	if !strSliceContains(orderBy, querySortFields) {
-		orderBy = models.FieldCreatedAt
-	}
-	if order != models.OrderAsc && order != models.OrderDesc {
-		order = models.OrderDesc
+	cleanOrderBy := models.FieldCreatedAt
+	for _, f := range querySortFields {
+		if f == orderBy {
+			cleanOrderBy = f
+			break
+		}
 	}
 
-	query = strings.ReplaceAll(query, "%order%", orderBy+" "+order)
+	cleanOrder := models.OrderDesc
+	if order == models.OrderAsc {
+		cleanOrder = models.OrderAsc
+	}
+
+	query = strings.ReplaceAll(query, "%order%", cleanOrderBy+" "+cleanOrder)
 
 	return searchStr, query
 }
