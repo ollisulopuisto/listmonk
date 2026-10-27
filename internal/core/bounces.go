@@ -14,15 +14,20 @@ var bounceQuerySortFields = []string{"email", "campaign_name", "source", models.
 // QueryBounces retrieves paginated bounce entries based on the given params.
 // It also returns the total number of bounce records in the DB.
 func (c *Core) QueryBounces(campID, subID int, source, typ, orderBy, order string, offset, limit int) ([]models.Bounce, int, error) {
-	if !strSliceContains(orderBy, bounceQuerySortFields) {
-		orderBy = models.FieldCreatedAt
+	cleanOrderBy := models.FieldCreatedAt
+	for _, f := range bounceQuerySortFields {
+		if f == orderBy {
+			cleanOrderBy = f
+			break
+		}
 	}
-	if order != models.OrderAsc && order != models.OrderDesc {
-		order = models.OrderDesc
+	cleanOrder := models.OrderDesc
+	if order == models.OrderAsc {
+		cleanOrder = models.OrderAsc
 	}
 
 	out := []models.Bounce{}
-	stmt := strings.ReplaceAll(c.q.QueryBounces, "%order%", orderBy+" "+order)
+	stmt := strings.ReplaceAll(c.q.QueryBounces, "%order%", cleanOrderBy+" "+cleanOrder)
 	if err := c.db.Select(&out, stmt, 0, campID, subID, source, typ, offset, limit); err != nil {
 		c.log.Printf("error fetching bounces: %v", err)
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
