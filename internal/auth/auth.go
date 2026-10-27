@@ -495,8 +495,9 @@ func GetSessionID(c *echo.Context) string {
 
 // HashAPIToken returns the SHA-256 hex digest of an API token.
 func HashAPIToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	h := sha256.New()
+	h.Write([]byte(token))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // validateSession checks if the cookie session is valid (in the DB) and returns the session and user details.
