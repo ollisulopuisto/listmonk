@@ -241,6 +241,11 @@ class RichtextEditor extends HTMLElement {
           continue;
         }
 
+        // Only allow a safe set of block tags so a data-value attribute
+        // from the toolbar cannot be used to inject an arbitrary element.
+        if (!/^(?:P|DIV|H[1-6]|BLOCKQUOTE|PRE)$/.test(tag)) {
+          continue;
+        }
         const el = document.createElement(tag);
         for (const attr of ['style', 'dir']) {
           if (child.hasAttribute(attr)) {
@@ -398,6 +403,13 @@ class RichtextEditor extends HTMLElement {
       localStorage.setItem(TRACK_KEY, f.track.checked);
       if (f.track.checked && /^https?:\/\//i.test(url)) {
         url += TRACK_SUFFIX;
+      }
+
+      // Reject URL schemes that can execute code (javascript:, data:, ...)
+      // so they cannot reach insertHTML / makeLink as a DOM-based XSS sink.
+      if (/^(javascript|data|vbscript|mailto):/i.test(url)) {
+        d.close();
+        return;
       }
 
       const attrs = {};
