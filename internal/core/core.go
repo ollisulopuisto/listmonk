@@ -191,19 +191,36 @@ func normalizeTags(tags []string) []string {
 	return out
 }
 
-// sanitizeSQLExp does basic sanitisation on arbitrary
-// SQL query expressions coming from the frontend.
-func sanitizeSQLExp(q string) string {
-	if len(q) == 0 {
-		return ""
-	}
-	q = strings.TrimSpace(q)
+// disallowedSQL matches statement-introducing DDL/DML keywords at the start
+// of an expression. A filter expression is always embedded inside a WHERE
+// clause (or a CTE body expecting a SELECT), so none of these are legitimate
+// as the leading keyword. Anchoring to the start avoids false positives on
+// subscriber data that merely contains these words (e.g. an email like
+// "x@delete.io"). Multi-statement injection is already blocked by rejecting
+// ";", so a statement keyword can only appear at the very start.
+var disallowedSQL = regexp.MustCompile(`(?i)^(drop|truncate|create|alter|insert|update|delete|copy|vacuum|exec|execute)\b`)
 
-	// Remove semicolon suffix.
-	if q[len(q)-1] == ';' {
-		q = q[:len(q)-1]
+// sanitizeSQLExp does basic sanitisation on arbitrary SQL query expressions
+// coming from the frontend. It rejects multi-statement input, SQL comments
+// and DDL/DML keywords so the expression can only be used as a WHERE clause.
+func sanitizeSQLExp(q string) (string, error) {
+	q = strings.TrimSpace(q)
+	if len(q) == 0 {
+		return "", nil
 	}
-	return q
+
+	// Multi-statement queries and SQL comments are never part of a filter
+	// expression; they are the classic SQL injection enablers.
+	if strings.Contains(q, ";") || strings.Contains(q, "--") || strings.Contains(q, "/*") || strings.Contains(q, "*/") {
+		return "", fmt.Errorf("unsafe SQL expression: multiple statements or comments are not allowed")
+	}
+
+	// DDL/DML keywords must not appear in a subscriber filter expression.
+	if disallowedSQL.MatchString(q) {
+		return "", fmt.Errorf("unsafe SQL expression: %q contains a disallowed statement", q)
+	}
+
+	return q, nil
 }
 
 // strHasLen checks if the given string has a length within min-max.

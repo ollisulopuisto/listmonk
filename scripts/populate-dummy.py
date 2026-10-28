@@ -344,7 +344,7 @@ def main():
                 random.choice(list_role_ids),
             ],
         )
-    print(f"{NUM_USERS + 1} users ('{ADMIN_USER}' / '{ADMIN_PASSWORD}')")
+    print(f"{NUM_USERS + 1} users ('{ADMIN_USER}')")
 
     camps = []
     for _ in range(NUM_CAMPAIGNS):

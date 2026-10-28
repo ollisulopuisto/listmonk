@@ -127,6 +127,18 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 		listIDs = []int{}
 	}
 
+	// Sanitize the arbitrary query condition before it is interpolated into
+	// the SQL statement, defending against SQL injection.
+	if queryExp != "" {
+		sanitized, err := sanitizeSQLExp(queryExp)
+		if err != nil {
+			c.log.Printf("error sanitizing subscriber query: %v", err)
+			return nil, 0, echo.NewHTTPError(http.StatusBadRequest,
+				c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
+		}
+		queryExp = sanitized
+	}
+
 	// There's an arbitrary query condition.
 	cond := "TRUE"
 	if queryExp != "" {
@@ -282,6 +294,18 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 	}
 	if listIDs == nil {
 		listIDs = []int{}
+	}
+
+	// Sanitize the arbitrary query condition before it is interpolated into
+	// the SQL statement, defending against SQL injection.
+	if query != "" {
+		sanitized, err := sanitizeSQLExp(query)
+		if err != nil {
+			c.log.Printf("error sanitizing subscriber export query: %v", err)
+			return nil, echo.NewHTTPError(http.StatusBadRequest,
+				c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
+		}
+		query = sanitized
 	}
 
 	// There's an arbitrary query condition.
@@ -506,7 +530,13 @@ func (c *Core) BlocklistSubscribers(subIDs []int) error {
 
 // BlocklistSubscribersByQuery blocklists the given list of subscribers.
 func (c *Core) BlocklistSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	if err := c.execSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+	sanitized, err := sanitizeSQLExp(queryExp)
+	if err != nil {
+		c.log.Printf("error sanitizing blocklist query: %v", err)
+		return echo.NewHTTPError(http.StatusBadRequest,
+			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
+	}
+	if err := c.execSubQueryTpl(searchStr, sanitized, c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
 		c.log.Printf("error blocklisting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("subscribers.errorBlocklisting", "error", pqErrMsg(err)))
@@ -535,7 +565,13 @@ func (c *Core) DeleteSubscribers(subIDs []int, subUUIDs []string) error {
 
 // DeleteSubscribersByQuery deletes subscribers by a given arbitrary query expression.
 func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	err := c.execSubQueryTpl(searchStr, sanitizeSQLExp(queryExp), c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus)
+	sanitized, err := sanitizeSQLExp(queryExp)
+	if err != nil {
+		c.log.Printf("error sanitizing delete query: %v", err)
+		return echo.NewHTTPError(http.StatusBadRequest,
+			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
+	}
+	err = c.execSubQueryTpl(searchStr, sanitized, c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus)
 	if err != nil {
 		c.log.Printf("error deleting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
@@ -724,6 +760,16 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 // using the raw `query-subscribers-template` template. It sanitizes the
 // query by dry-running it as a read only query.
 func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, subscriberStatus string) (string, error) {
+	// Sanitize the arbitrary query condition before it is interpolated into
+	// the SQL statement, defending against SQL injection.
+	if queryExp != "" {
+		sanitized, err := sanitizeSQLExp(queryExp)
+		if err != nil {
+			return "", err
+		}
+		queryExp = sanitized
+	}
+
 	// There's an arbitrary query condition.
 	cond := "TRUE"
 	if queryExp != "" {

@@ -60,3 +60,43 @@ func TestStrHasLen(t *testing.T) {
 		}
 	}
 }
+
+// TestSanitizeSQLExp ensures arbitrary SQL expressions from the frontend
+// cannot inject additional statements or comments into a query.
+func TestSanitizeSQLExp(t *testing.T) {
+	valid := []string{
+		"",
+		"subscribers.name = 'foo'",
+		"subscribers.id IN (SELECT id FROM lists)",
+		"subscribers.status != 'deleted'",   // "deleted" is not the disallowed "delete" keyword
+		"subscribers.updated_at > NOW()",    // "updated" is not the disallowed "update" keyword
+		"subscribers.email = 'x@delete.io'", // "delete" inside data is fine
+		"TRUE",
+	}
+	for _, q := range valid {
+		out, err := sanitizeSQLExp(q)
+		if err != nil {
+			t.Errorf("sanitizeSQLExp(%q) returned error: %v", q, err)
+		}
+		if out != q {
+			t.Errorf("sanitizeSQLExp(%q) = %q; want %q", q, out, q)
+		}
+	}
+
+	invalid := []string{
+		"true; DROP TABLE subscribers",
+		"subscribers.id = 1; DELETE FROM subscribers",
+		"true -- drop table subscribers",
+		"true /* drop table */",
+		"DROP TABLE subscribers",
+		"DELETE FROM subscribers WHERE id = 1",
+		"UPDATE subscribers SET status = 'blocklisted'",
+		"1; TRUNCATE subscribers",
+		"1 /* comment */",
+	}
+	for _, q := range invalid {
+		if _, err := sanitizeSQLExp(q); err == nil {
+			t.Errorf("sanitizeSQLExp(%q) should reject unsafe SQL", q)
+		}
+	}
+}
