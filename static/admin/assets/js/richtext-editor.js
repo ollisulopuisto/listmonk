@@ -2,6 +2,7 @@
 import Squire from 'squire-rte';
 import { beautifyHTML } from './content.js';
 import { setupTable } from './richtext/table.js';
+import { isSafeLinkUrl } from './richtext/url.js';
 import {
   i18n, t, closestInSelection, PALETTE, EMOJIS, CHARS,
 } from './richtext/data.js';
@@ -405,9 +406,10 @@ class RichtextEditor extends HTMLElement {
         url += TRACK_SUFFIX;
       }
 
-      // Reject URL schemes that can execute code (javascript:, data:, ...)
-      // so they cannot reach insertHTML / makeLink as a DOM-based XSS sink.
-      if (/^(javascript|data|vbscript|mailto):/i.test(url)) {
+      // Allowlist safe URL schemes so a user-supplied URL can never become
+      // an executable link (javascript:, data:, ...) reaching the editor or
+      // the mails built from it.
+      if (!isSafeLinkUrl(url)) {
         d.close();
         return;
       }
@@ -425,11 +427,13 @@ class RichtextEditor extends HTMLElement {
         ed.setSelection(range);
         ed.makeLink(url, attrs);
       } else if (label && !sel) {
-        // Nothing selected, so insert a new labelled link.
+        // Nothing selected, so insert a new labelled link. Insert the element
+        // directly instead of serializing it to HTML first: the user-supplied
+        // URL is then never reinterpreted as markup (DOM-based XSS sink).
         const el = Object.assign(document.createElement('a'), { textContent: label });
         el.setAttribute('href', url);
         Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
-        ed.insertHTML(el.outerHTML);
+        ed.insertElement(el);
       } else {
         ed.makeLink(url, attrs);
       }
