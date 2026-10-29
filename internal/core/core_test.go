@@ -152,3 +152,65 @@ func TestSanitizeSQLExp(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeSQLExpFunctionAllowlist(t *testing.T) {
+	allowed := []string{
+		"lower(email) LIKE '%@example.com'",
+		"created_at > now() - interval '7 day'",
+		"email ~* '@(a|b)\\.com$'",
+		"substring(email from position('@' in email) + 1) = 'example.com'",
+		"COALESCE(NULLIF(TRIM(attribs->>'company'), ''), 'unknown') = 'x'",
+		"date_trunc('month', created_at) = date_trunc('month', now())",
+		"list_id IN (1, 2, 3)",
+		"EXISTS (SELECT 1 FROM subscriber_lists WHERE subscriber_id = subscribers.id)",
+		// Strings and dollar-quoted strings containing parens are not calls.
+		"email LIKE '%foo(%'",
+		"name = $$weird( value$$",
+		"name = 'it''s ('",
+		// Whitespace between a safe function and its paren is fine.
+		"lower (email) = 'x'",
+	}
+	for _, q := range allowed {
+		if _, err := sanitizeSQLExp(q); err != nil {
+			t.Errorf("sanitizeSQLExp(%q) rejected a legitimate expression: %v", q, err)
+		}
+	}
+
+	rejected := []string{
+		// DoS via read-only-transaction-safe sleep.
+		"1=1 OR pg_sleep(60) IS NULL",
+		"pg_sleep ( 60 ) IS NULL",
+		// Schema-qualified and quoted-identifier obfuscation.
+		"pg_catalog.pg_sleep(1) IS NOT NULL",
+		`"pg_sleep"(1) IS NULL`,
+		`"PG" || '_sleep'`, // sanity: this is NOT a call, must be handled below
+		// Server file reads / settings / side channels.
+		"pg_read_file('/etc/passwd') IS NOT NULL",
+		"set_config('log_statement', 'all', false) IS NULL",
+		"dblink('host=x', 'SELECT 1') IS NOT NULL",
+		"lo_import('/etc/passwd') IS NOT NULL",
+		"pg_terminate_backend(1) IS NULL",
+		"pg_notify('x', 'y') IS NULL",
+		// Sequence mutation.
+		"nextval('subscribers_id_seq') IS NOT NULL",
+		// Unknown/custom functions are rejected by default.
+		"my_custom_function(1) = 2",
+		// Hidden inside a legit outer call.
+		"lower(pg_sleep(1)::text) = 'x'",
+	}
+	for _, q := range rejected[:1] {
+		_ = q
+	}
+	for _, q := range rejected {
+		if q == `"PG" || '_sleep'` {
+			// Not a function call; must NOT be rejected.
+			if _, err := sanitizeSQLExp(q); err != nil {
+				t.Errorf("sanitizeSQLExp(%q) false positive: %v", q, err)
+			}
+			continue
+		}
+		if _, err := sanitizeSQLExp(q); err == nil {
+			t.Errorf("sanitizeSQLExp(%q) accepted a dangerous function call", q)
+		}
+	}
+}

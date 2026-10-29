@@ -226,7 +226,134 @@ func sanitizeSQLExp(q string) (string, error) {
 		return "", fmt.Errorf("unsafe SQL expression: %q contains a disallowed statement", q)
 	}
 
+	if err := validateSQLExpFunctions(q); err != nil {
+		return "", err
+	}
+
 	return q, nil
+}
+
+// allowedSQLExpFuncs is the allowlist of functions and parenthesised keyword
+// constructs permitted in a subscriber filter expression. Anything else that
+// parses as a function call is rejected. Arbitrary function calls
+// (pg_sleep(), pg_read_file(), set_config(), dblink(), nextval(), ...) are
+// the residual injection channel once multi-statement input, comments and
+// non-allowlisted tables are locked down: they need no relation, so the
+// EXPLAIN table check cannot see them, and several (pg_sleep) run fine
+// inside the read-only transactions.
+var allowedSQLExpFuncs = map[string]struct{}{
+	// Parenthesised SQL constructs.
+	"and": {}, "or": {}, "not": {}, "in": {}, "exists": {}, "any": {}, "all": {},
+	"array": {}, "row": {}, "cast": {}, "values": {}, "filter": {},
+	// Conditional / null-safe.
+	"coalesce": {}, "nullif": {}, "greatest": {}, "least": {},
+	// String functions.
+	"lower": {}, "upper": {}, "initcap": {}, "length": {}, "char_length": {},
+	"character_length": {}, "octet_length": {}, "bit_length": {},
+	"btrim": {}, "ltrim": {}, "rtrim": {}, "trim": {},
+	"left": {}, "right": {}, "repeat": {}, "replace": {}, "reverse": {},
+	"split_part": {}, "strpos": {}, "position": {}, "substring": {}, "substr": {},
+	"concat": {}, "concat_ws": {}, "lpad": {}, "rpad": {}, "translate": {},
+	"starts_with": {}, "ascii": {}, "chr": {}, "md5": {},
+	// Date/time functions.
+	"now": {}, "age": {}, "date_trunc": {}, "date_part": {}, "extract": {},
+	"to_char": {}, "to_date": {}, "to_timestamp": {}, "to_number": {}, "to_hex": {},
+	"justify_days": {}, "justify_hours": {}, "justify_interval": {}, "timezone": {},
+	"make_date": {}, "make_time": {}, "make_timestamp": {}, "make_interval": {},
+	// Numeric functions.
+	"abs": {}, "round": {}, "ceil": {}, "ceiling": {}, "floor": {}, "sign": {},
+	"mod": {}, "trunc": {}, "sqrt": {}, "power": {}, "exp": {}, "ln": {}, "log": {},
+	// Aggregates: never valid in a WHERE clause, so the DB rejects them anyway.
+	"count": {}, "sum": {}, "avg": {}, "min": {}, "max": {},
+	"bool_and": {}, "bool_or": {}, "string_agg": {}, "array_agg": {},
+}
+
+// validateSQLExpFunctions scans a filter expression with a small lexer that
+// skips string literals, quoted identifiers and dollar-quoted strings, and
+// rejects any remaining identifier followed by "(" whose (final, lowercased)
+// component is not in allowedSQLExpFuncs.
+func validateSQLExpFunctions(q string) error {
+	for i := 0; i < len(q); {
+		c := q[i]
+		switch {
+		case c == '\'':
+			// String literal: skip, honouring '' escapes.
+			i++
+			for i < len(q) {
+				if q[i] == '\'' {
+					if i+1 < len(q) && q[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+		case c == '"':
+			// Quoted identifier: it can itself name a function ("pg_sleep"(1)).
+			j := i + 1
+			for j < len(q) {
+				if q[j] == '"' {
+					if j+1 < len(q) && q[j+1] == '"' {
+						j += 2
+						continue
+					}
+					break
+				}
+				j++
+			}
+			name := strings.ToLower(strings.ReplaceAll(q[i+1:min(j, len(q))], `""`, `"`))
+			k := j + 1
+			for k < len(q) && (q[k] == ' ' || q[k] == '\t' || q[k] == '\n' || q[k] == '\r') {
+				k++
+			}
+			if k < len(q) && q[k] == '(' {
+				if _, ok := allowedSQLExpFuncs[name]; !ok {
+					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
+				}
+			}
+			i = j + 1
+		case c == '$':
+			// Dollar-quoted string $tag$...$tag$: skip if well-formed.
+			j := i + 1
+			for j < len(q) && (q[j] == '_' || (q[j] >= '0' && q[j] <= '9') ||
+				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
+				j++
+			}
+			if j < len(q) && q[j] == '$' {
+				tag := q[i : j+1]
+				if end := strings.Index(q[j+1:], tag); end >= 0 {
+					i = j + 1 + end + len(tag)
+				} else {
+					// Unterminated: let the DB reject it; stop scanning here.
+					return nil
+				}
+			} else {
+				i++
+			}
+		case c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
+			j := i + 1
+			for j < len(q) && (q[j] == '_' || q[j] == '$' || (q[j] >= '0' && q[j] <= '9') ||
+				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
+				j++
+			}
+			name := strings.ToLower(q[i:j])
+			k := j
+			for k < len(q) && (q[k] == ' ' || q[k] == '\t' || q[k] == '\n' || q[k] == '\r') {
+				k++
+			}
+			if k < len(q) && q[k] == '(' {
+				if _, ok := allowedSQLExpFuncs[name]; !ok {
+					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
+				}
+			}
+			i = j
+		default:
+			i++
+		}
+	}
+	return nil
 }
 
 // strHasLen checks if the given string has a length within min-max.
