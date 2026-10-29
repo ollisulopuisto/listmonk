@@ -167,8 +167,16 @@ func TestSanitizeSQLExpFunctionAllowlist(t *testing.T) {
 		"email LIKE '%foo(%'",
 		"name = $$weird( value$$",
 		"name = 'it''s ('",
-		// Whitespace between a safe function and its paren is fine.
+		// Whitespace between a safe function and its paren is fine
+		// (comments are rejected by the expression gate).
 		"lower (email) = 'x'",
+		// Cast type names with precision arguments.
+		"CAST(attribs->>'name' AS varchar(255)) = 'x'",
+		"(attribs->>'age')::numeric(10, 2) > 5",
+		// Misc allowed built-ins.
+		"overlay(email placing '***' from 1 for 3) LIKE '%@%'",
+		// A quoted identifier concatenated, not called, is not a function call.
+		`"PG" || '_sleep' = 'PG_sleep'`,
 	}
 	for _, q := range allowed {
 		if _, err := sanitizeSQLExp(q); err != nil {
@@ -183,7 +191,6 @@ func TestSanitizeSQLExpFunctionAllowlist(t *testing.T) {
 		// Schema-qualified and quoted-identifier obfuscation.
 		"pg_catalog.pg_sleep(1) IS NOT NULL",
 		`"pg_sleep"(1) IS NULL`,
-		`"PG" || '_sleep'`, // sanity: this is NOT a call, must be handled below
 		// Server file reads / settings / side channels.
 		"pg_read_file('/etc/passwd') IS NOT NULL",
 		"set_config('log_statement', 'all', false) IS NULL",
@@ -197,20 +204,47 @@ func TestSanitizeSQLExpFunctionAllowlist(t *testing.T) {
 		"my_custom_function(1) = 2",
 		// Hidden inside a legit outer call.
 		"lower(pg_sleep(1)::text) = 'x'",
-	}
-	for _, q := range rejected[:1] {
-		_ = q
+		// Comments are whitespace in PostgreSQL; a comment anywhere is
+		// rejected by the expression gate before the allowlist even runs.
+		"pg_sleep/**/(1) IS NULL",
 	}
 	for _, q := range rejected {
-		if q == `"PG" || '_sleep'` {
-			// Not a function call; must NOT be rejected.
-			if _, err := sanitizeSQLExp(q); err != nil {
-				t.Errorf("sanitizeSQLExp(%q) false positive: %v", q, err)
-			}
-			continue
-		}
 		if _, err := sanitizeSQLExp(q); err == nil {
 			t.Errorf("sanitizeSQLExp(%q) accepted a dangerous function call", q)
+		}
+	}
+}
+
+// TestValidateSQLExpFunctionsCommentBypass exercises the allowlist lexer
+// directly: PostgreSQL treats comments (including nested /* */) as
+// whitespace, so a call may be written name/**/(args). The lexer must not
+// let that slip past even though the outer expression gate also rejects
+// comments (defence in depth).
+func TestValidateSQLExpFunctionsCommentBypass(t *testing.T) {
+	rejected := []string{
+		"pg_sleep/**/(1) IS NULL",
+		"pg_sleep /* comment */ (1) IS NULL",
+		"pg_sleep /* nested /* comment */ tail */ (1) IS NULL",
+		"pg_sleep-- line comment\n(1) IS NULL",
+		`"pg_sleep"/**/(1) IS NULL`,
+		"pg_catalog/**/./**/pg_sleep/**/(1) IS NULL",
+		"pg_catalog . pg_sleep (1) IS NULL",
+	}
+	for _, q := range rejected {
+		if err := validateSQLExpFunctions(q); err == nil {
+			t.Errorf("validateSQLExpFunctions(%q) accepted a comment-obfuscated call", q)
+		}
+	}
+
+	allowed := []string{
+		"lower /* note */ (email) = 'x'",
+		"lower-- note\n(email) = 'x'",
+		"email LIKE '%-- not a comment%'",
+		"email LIKE '%/* not a comment */%'",
+	}
+	for _, q := range allowed {
+		if err := validateSQLExpFunctions(q); err != nil {
+			t.Errorf("validateSQLExpFunctions(%q) false positive: %v", q, err)
 		}
 	}
 }

@@ -24,6 +24,28 @@ const (
 	optinThrottleCap = 5000
 )
 
+// subQueryStatementTimeout bounds how long an arbitrary subscriber filter
+// (and the statements built on it) may run, so a pathological filter cannot
+// tie up a database connection indefinitely. 30s is generous for an
+// interactive admin filter over the allowlisted tables; anything longer is
+// almost certainly a malicious or pathological expression.
+const subQueryStatementTimeout = "30s"
+
+// beginSubQueryTx starts a transaction for running subscriber-filter queries
+// and applies a per-transaction statement timeout.
+func (c *Core) beginSubQueryTx(readOnly bool) (*sqlx.Tx, error) {
+	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: readOnly})
+	if err != nil {
+		return nil, err
+	}
+	// The value is a compile-time constant; SET does not accept bind params.
+	if _, err := tx.Exec("SET LOCAL statement_timeout = '" + subQueryStatementTimeout + "'"); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
 var (
 	allowedSubQueryTables = map[string]struct{}{
 		"subscribers":      {},
@@ -177,7 +199,7 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 		return models.Subscribers{}, 0, nil
 	}
 
-	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	tx, err := c.beginSubQueryTx(true)
 	if err != nil {
 		c.log.Printf("error preparing subscriber query: %v", err)
 		return nil, 0, echo.NewHTTPError(http.StatusBadRequest, c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
@@ -339,18 +361,18 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 		return nil, err
 	}
 
-	// Prepare the actual query statement.
-	tx, err := c.db.Preparex(stmt)
-	if err != nil {
-		c.log.Printf("error preparing subscriber query: %v", err)
-		return nil, echo.NewHTTPError(http.StatusBadRequest,
-			c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
-	}
-
 	id := 0
 	return func() ([]models.SubscriberExport, error) {
 		var out []models.SubscriberExport
-		if err := tx.Select(&out, pq.Array(listIDs), id, pq.Array(subIDs), subStatus, searchStr, batchSize, subscriberStatus); err != nil {
+		// Each batch runs in its own bounded read-only transaction.
+		tx, err := c.beginSubQueryTx(true)
+		if err != nil {
+			c.log.Printf("error preparing subscriber export query: %v", err)
+			return nil, echo.NewHTTPError(http.StatusBadRequest,
+				c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
+		}
+		defer tx.Rollback()
+		if err := tx.Select(&out, stmt, pq.Array(listIDs), id, pq.Array(subIDs), subStatus, searchStr, batchSize, subscriberStatus); err != nil {
 			c.log.Printf("error exporting subscribers by query: %v", err)
 			return nil, echo.NewHTTPError(http.StatusInternalServerError,
 				c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -673,7 +695,7 @@ func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus, subscriberStat
 	// Create a readonly transaction that just does COUNT() to obtain the count of results
 	// and to ensure that the arbitrary query is indeed readonly.
 	stmt := strings.ReplaceAll(c.q.QuerySubscribersCount, "%query%", queryExp)
-	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	tx, err := c.beginSubQueryTx(true)
 	if err != nil {
 		c.log.Printf("error preparing subscriber query: %v", err)
 		return 0, echo.NewHTTPError(http.StatusBadRequest, c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
@@ -787,7 +809,7 @@ func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, 
 		return "", err
 	}
 
-	tx, err := c.db.BeginTxx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	tx, err := c.beginSubQueryTx(true)
 	if err != nil {
 		return "", err
 	}
@@ -823,12 +845,18 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	// First argument is the boolean indicating if the query is a dry run.
 	a := append([]any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}, args...)
 
-	// Execute the query on the DB.
-	if _, err := c.db.Exec(stmt, a...); err != nil {
+	// Execute the query on the DB in a bounded transaction.
+	tx, err := c.beginSubQueryTx(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(stmt, a...); err != nil {
 		return err
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // sendOptinConfirmation throttles opt-in mails sent on public subscriptions.

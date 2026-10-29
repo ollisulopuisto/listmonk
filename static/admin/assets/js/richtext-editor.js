@@ -115,7 +115,8 @@ class RichtextEditor extends HTMLElement {
     // Signal the host that the editor is initialized.
     queueMicrotask(() => {
       this.dispatchEvent(new CustomEvent('editor-ready', { bubbles: true }));
-      if (!disabled) {
+      // The editor-ready listener may have disconnected the element.
+      if (!disabled && this.editor) {
         this.editor.focus();
       }
     });
