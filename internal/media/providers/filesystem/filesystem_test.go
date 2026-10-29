@@ -73,6 +73,32 @@ func TestDeleteRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestResolvePathRejectsAbsoluteAndBackslashTraversal(t *testing.T) {
+	dir := t.TempDir()
+	c := &Client{opts: Opts{UploadPath: dir}}
+
+	for _, key := range []string{
+		"/etc/passwd",
+		"..\\..\\evil.txt",
+		"sub/..\\..\\evil.txt",
+	} {
+		if _, err := c.GetBlob(key); err == nil {
+			t.Errorf("GetBlob(%q) should be rejected", key)
+		}
+	}
+
+	// Keys that clean to an in-directory path keep working.
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "file.txt"), []byte("x"), 0644); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if _, err := c.GetBlob("sub//file.txt"); err != nil {
+		t.Errorf("GetBlob(%q) should resolve inside the upload dir: %v", "sub//file.txt", err)
+	}
+}
+
 type readSeeker struct {
 	*bytes.Reader
 }

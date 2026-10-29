@@ -80,25 +80,31 @@ func (c *Client) Delete(file string) error {
 }
 
 // resolvePath joins the upload directory with the given key and rejects the
-// request if the resolved path escapes the upload directory. This prevents
-// path traversal via keys such as "../".
+// request if the key attempts path traversal or resolves outside the upload
+// directory. This prevents path traversal via keys such as "../".
 func (c *Client) resolvePath(key string) (string, error) {
-	dir := getDir(c.opts.UploadPath)
-
-	fPath := filepath.Join(dir, key)
-	abs, err := filepath.Abs(fPath)
-	if err != nil {
-		return "", err
+	// Traversal segments are never part of a legitimate upload key; reject
+	// them loudly instead of silently remapping the path.
+	if strings.Contains(key, "..") {
+		return "", fmt.Errorf("path %q is not a valid upload key", key)
+	}
+	if filepath.IsAbs(key) {
+		return "", fmt.Errorf("path %q is not a valid upload key", key)
 	}
 
+	dir := getDir(c.opts.UploadPath)
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
 
-	// The resolved path must be the upload directory itself or live inside it.
-	// The separator boundary avoids matching a sibling directory such as
-	// "/tmp/foo-bar" when the upload dir is "/tmp/foo".
+	// Cleaning "/" + key roots the key in a synthetic root and collapses any
+	// residual traversal, so the joined path is always contained.
+	abs := filepath.Join(absDir, filepath.Clean("/"+key))
+
+	// Defence in depth: the resolved path must be the upload directory itself
+	// or live inside it. The separator boundary avoids matching a sibling
+	// directory such as "/tmp/foo-bar" when the upload dir is "/tmp/foo".
 	if abs != absDir && !strings.HasPrefix(abs, absDir+string(os.PathSeparator)) {
 		return "", fmt.Errorf("path %q escapes the upload directory", key)
 	}
