@@ -266,16 +266,86 @@ var allowedSQLExpFuncs = map[string]struct{}{
 	// Aggregates: never valid in a WHERE clause, so the DB rejects them anyway.
 	"count": {}, "sum": {}, "avg": {}, "min": {}, "max": {},
 	"bool_and": {}, "bool_or": {}, "string_agg": {}, "array_agg": {},
+	// Misc built-ins with no side effects.
+	"overlay": {},
+	// Type names usable as cast calls or with precision arguments inside
+	// CAST(... AS type(n)): side-effect-free conversions only.
+	"int": {}, "int2": {}, "int4": {}, "int8": {}, "integer": {}, "bigint": {},
+	"smallint": {}, "float4": {}, "float8": {}, "real": {}, "text": {},
+	"bool": {}, "boolean": {}, "date": {}, "json": {}, "jsonb": {},
+	"uuid": {}, "oid": {}, "name": {}, "bytea": {},
+	"varchar": {}, "char": {}, "bpchar": {}, "character": {},
+	"numeric": {}, "decimal": {}, "timestamp": {}, "timestamptz": {},
+	"time": {}, "interval": {}, "bit": {},
 }
 
 // validateSQLExpFunctions scans a filter expression with a small lexer that
 // skips string literals, quoted identifiers and dollar-quoted strings, and
 // rejects any remaining identifier followed by "(" whose (final, lowercased)
 // component is not in allowedSQLExpFuncs.
+// skipSQLSpace returns the index of the next character at or after i that is
+// neither whitespace nor a comment. PostgreSQL treats comments as whitespace
+// everywhere (including between a function name and its parenthesis), and
+// supports nested /* */ comments, so both -- and nested /* */ forms must be
+// skipped to keep the allowlist from being bypassed with name/**/(args).
+// An unterminated comment consumes the rest of the string; the DB then
+// rejects the expression, which is fail-safe.
+func skipSQLSpace(q string, i int) int {
+	for i < len(q) {
+		switch {
+		case q[i] == ' ' || q[i] == '\t' || q[i] == '\n' || q[i] == '\r' || q[i] == '\v' || q[i] == '\f':
+			i++
+		case i+1 < len(q) && q[i] == '-' && q[i+1] == '-':
+			for i < len(q) && q[i] != '\n' {
+				i++
+			}
+		case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
+			depth := 1
+			i += 2
+			for i < len(q) && depth > 0 {
+				switch {
+				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
+					depth++
+					i += 2
+				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
+					depth--
+					i += 2
+				default:
+					i++
+				}
+			}
+		default:
+			return i
+		}
+	}
+	return i
+}
+
 func validateSQLExpFunctions(q string) error {
 	for i := 0; i < len(q); {
 		c := q[i]
 		switch {
+		case c == '-' && i+1 < len(q) && q[i+1] == '-':
+			// Line comment: skip its contents.
+			for i < len(q) && q[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(q) && q[i+1] == '*':
+			// Block comment (PostgreSQL allows nesting): skip its contents.
+			depth := 1
+			i += 2
+			for i < len(q) && depth > 0 {
+				switch {
+				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
+					depth++
+					i += 2
+				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
+					depth--
+					i += 2
+				default:
+					i++
+				}
+			}
 		case c == '\'':
 			// String literal: skip, honouring '' escapes.
 			i++
@@ -304,10 +374,7 @@ func validateSQLExpFunctions(q string) error {
 				j++
 			}
 			name := strings.ToLower(strings.ReplaceAll(q[i+1:min(j, len(q))], `""`, `"`))
-			k := j + 1
-			for k < len(q) && (q[k] == ' ' || q[k] == '\t' || q[k] == '\n' || q[k] == '\r') {
-				k++
-			}
+			k := skipSQLSpace(q, j+1)
 			if k < len(q) && q[k] == '(' {
 				if _, ok := allowedSQLExpFuncs[name]; !ok {
 					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
@@ -339,10 +406,7 @@ func validateSQLExpFunctions(q string) error {
 				j++
 			}
 			name := strings.ToLower(q[i:j])
-			k := j
-			for k < len(q) && (q[k] == ' ' || q[k] == '\t' || q[k] == '\n' || q[k] == '\r') {
-				k++
-			}
+			k := skipSQLSpace(q, j)
 			if k < len(q) && q[k] == '(' {
 				if _, ok := allowedSQLExpFuncs[name]; !ok {
 					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
