@@ -8,6 +8,13 @@ import {
 
 const TRACK_SUFFIX = '@TrackLink';
 const TRACK_KEY = 'trackLink';
+const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}[char]));
 
 // Simple toolbar toggles.
 const TOGGLES = {
@@ -426,10 +433,10 @@ class RichtextEditor extends HTMLElement {
         ed.makeLink(url, attrs);
       } else if (label && !sel) {
         // Nothing selected, so insert a new labelled link.
-        const el = Object.assign(document.createElement('a'), { textContent: label });
-        el.setAttribute('href', url);
-        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
-        ed.insertHTML(el.outerHTML);
+        const linkAttrs = Object.entries({ href: url, ...attrs })
+          .map(([name, value]) => `${name}="${escapeHTML(value)}"`)
+          .join(' ');
+        ed.insertHTML(`<a ${linkAttrs}>${escapeHTML(label)}</a>`);
       } else {
         ed.makeLink(url, attrs);
       }
