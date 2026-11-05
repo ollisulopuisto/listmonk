@@ -212,6 +212,13 @@ func (c *Core) QuerySubscribers(searchStr, queryExp string, listIDs []int, subSt
 	defer tx.Rollback()
 
 	var out models.Subscribers
+	// codeql[go/sql-injection]
+	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
+	// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
+	// a read-only transaction with a statement timeout; its tables are allowlisted by
+	// validateQueryTables. This is the intentional, permission-gated subscribers:sql_query
+	// feature (docs/docs/content/security-reports.md); CodeQL cannot model the combined
+	// defences.
 	if err := tx.Select(&out, stmt, pq.Array(listIDs), subStatus, searchStr, offset, limit, subscriberStatus); err != nil {
 		return nil, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -379,6 +386,13 @@ func (c *Core) ExportSubscribers(searchStr, query string, subIDs, listIDs []int,
 				c.i18n.Ts("subscribers.errorPreparingQuery", "error", pqErrMsg(err)))
 		}
 		defer tx.Rollback()
+		// codeql[go/sql-injection]
+		// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
+		// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
+		// a read-only transaction with a statement timeout; its tables are allowlisted by
+		// validateQueryTables. This is the intentional, permission-gated subscribers:sql_query
+		// feature (docs/docs/content/security-reports.md); CodeQL cannot model the combined
+		// defences.
 		if err := tx.Select(&out, stmt, pq.Array(listIDs), id, pq.Array(subIDs), subStatus, searchStr, batchSize, subscriberStatus); err != nil {
 			c.log.Printf("error exporting subscribers by query: %v", err)
 			return nil, echo.NewHTTPError(http.StatusInternalServerError,
@@ -714,6 +728,13 @@ func (c *Core) getSubscriberCount(searchStr, queryExp, subStatus, subscriberStat
 
 	// Execute the readonly query and get the count of results.
 	total := 0
+	// codeql[go/sql-injection]
+	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
+	// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
+	// a read-only transaction with a statement timeout; its tables are allowlisted by
+	// validateQueryTables. This is the intentional, permission-gated subscribers:sql_query
+	// feature (docs/docs/content/security-reports.md); CodeQL cannot model the combined
+	// defences.
 	if err := tx.Get(&total, stmt, pq.Array(listIDs), subStatus, searchStr, subscriberStatus); err != nil {
 		return 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -732,6 +753,13 @@ func validateQueryTables(db *sqlx.DB, query string, allowedTables map[string]str
 	defer tx.Rollback()
 
 	var plan string
+	// codeql[go/sql-injection]
+	// `query` is an interpolated subscriber filter expression that has already passed
+	// sanitizeSQLExp (rejects multi-statement input, SQL comments and DDL/DML keywords)
+	// and is executed here as EXPLAIN inside a read-only transaction. The resulting plan
+	// is only inspected for relation names, which are checked against an allowlist; the
+	// plan itself is never executed against user data. Intentional permission-gated
+	// subscribers:sql_query feature; CodeQL cannot model the combined defences.
 	if err = tx.QueryRow("EXPLAIN (FORMAT JSON) "+query, args...).Scan(&plan); err != nil {
 		return err
 	}
@@ -829,6 +857,12 @@ func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, 
 	defer tx.Rollback()
 
 	// Perform the dry run.
+	// codeql[go/sql-injection]
+	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
+	// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
+	// a read-only transaction with a statement timeout as a read-only dry run; its tables
+	// are allowlisted by validateQueryTables. Intentional permission-gated
+	// subscribers:sql_query feature; CodeQL cannot model the combined defences.
 	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
 		return "", err
 	}
@@ -868,6 +902,13 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	}
 	defer tx.Rollback()
 
+	// codeql[go/sql-injection]
+	// `stmt` embeds a subscriber filter expression produced by compileSubscriberQueryTpl
+	// after sanitizeSQLExp and a read-only dry run, so it has already been validated:
+	// sanitizeSQLExp rejects multi-statement input, SQL comments and DDL/DML keywords,
+	// the transaction is read-only with a statement timeout, and its tables are allowlisted
+	// by validateQueryTables. Intentional permission-gated subscribers:sql_query feature;
+	// CodeQL cannot model the combined defences.
 	if _, err := tx.Exec(stmt, a...); err != nil {
 		return err
 	}
