@@ -146,3 +146,64 @@ func testTrackLinkCompile(t *testing.T, url, contentType string) {
 		t.Fatalf("%s: rendered output = %q, want %q", contentType, out.String(), want)
 	}
 }
+
+func TestPrepareTplFuncs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no matches",
+			input:    "<html><body><h1>Hello World</h1><p>Normal text</p></body></html>",
+			expected: "<html><body><h1>Hello World</h1><p>Normal text</p></body></html>",
+		},
+		{
+			name:     "TrackLink template tag",
+			input:    `{{ TrackLink "https://example.com" }}`,
+			expected: `{{ TrackLink "https://example.com" . }}`,
+		},
+		{
+			name:     "@TrackLink shorthand",
+			input:    `<a href="https://example.com/item@TrackLink">Link</a>`,
+			expected: `<a href="{{ TrackLink "https://example.com/item" . }}">Link</a>`,
+		},
+		{
+			name:     "special template tags",
+			input:    `{{ TrackView }} {{ UnsubscribeURL }} {{ ManageURL }} {{ OptinURL }} {{ MessageURL }}`,
+			expected: `{{ TrackView . }} {{ UnsubscribeURL . }} {{ ManageURL . }} {{ OptinURL . }} {{ MessageURL . }}`,
+		},
+		{
+			name:     "mixed template tags and shorthands",
+			input:    `{{ TrackView }} <a href="https://example.com@TrackLink">Link</a> {{ TrackLink "http://example.org" }} {{ UnsubscribeURL }}`,
+			expected: `{{ TrackView . }} <a href="{{ TrackLink "https://example.com" . }}">Link</a> {{ TrackLink "http://example.org" . }} {{ UnsubscribeURL . }}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PrepareTplFuncs(tt.input)
+			if got != tt.expected {
+				t.Errorf("PrepareTplFuncs() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func BenchmarkPrepareTplFuncs_NoMatches(b *testing.B) {
+	body := `<html><body><h1>Hello World</h1><p>` + strings.Repeat("This is a standard email template body without any track links or shorthands. ", 50) + `</p></body></html>`
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = PrepareTplFuncs(body)
+	}
+}
+
+func BenchmarkPrepareTplFuncs_WithMatches(b *testing.B) {
+	body := `<html><body><h1>Hello {{ TrackView }}</h1><p><a href="https://example.com/click@TrackLink">Click here</a></p><p>{{ UnsubscribeURL }}</p></body></html>`
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = PrepareTplFuncs(body)
+	}
+}

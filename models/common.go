@@ -97,6 +97,37 @@ var regTplFuncs = []regTplFunc{
 	},
 }
 
+// PrepareTplFuncs rewrites shorthand template expressions into standard Go template calls.
+// Performance optimization: Uses fast substring checks before invoking regexp replacements,
+// avoiding regex engine overhead and intermediate heap allocations when template tags or
+// shorthands are not present.
+func PrepareTplFuncs(body string) string {
+	hasBraces := strings.Contains(body, "{{")
+	hasTrackLinkTag := hasBraces && strings.Contains(body, "TrackLink")
+	hasTrackLinkAt := strings.Contains(body, "@TrackLink")
+	hasSpecialTag := hasBraces && (strings.Contains(body, "TrackView") ||
+		strings.Contains(body, "UnsubscribeURL") ||
+		strings.Contains(body, "ManageURL") ||
+		strings.Contains(body, "OptinURL") ||
+		strings.Contains(body, "MessageURL"))
+
+	if !hasTrackLinkTag && !hasTrackLinkAt && !hasSpecialTag {
+		return body
+	}
+
+	if hasTrackLinkTag {
+		body = regTplFuncs[0].regExp.ReplaceAllString(body, regTplFuncs[0].replace)
+	}
+	if hasTrackLinkAt {
+		body = regTplFuncs[1].regExp.ReplaceAllString(body, regTplFuncs[1].replace)
+	}
+	if hasSpecialTag {
+		body = regTplFuncs[2].regExp.ReplaceAllString(body, regTplFuncs[2].replace)
+	}
+
+	return body
+}
+
 // markdown is a global instance of Markdown parser and renderer.
 var markdown = goldmark.New(
 	goldmark.WithParserOptions(
