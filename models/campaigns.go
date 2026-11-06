@@ -247,9 +247,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 		body = `{{ template "content" . }}`
 	}
 
-	for _, r := range regTplFuncs {
-		body = r.regExp.ReplaceAllString(body, r.replace)
-	}
+	body = PrepareTplFuncs(body)
 
 	baseTPL, err := template.New(BaseTpl).Funcs(f).Parse(body)
 	if err != nil {
@@ -268,9 +266,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	}
 
 	// Compile the campaign message.
-	for _, r := range regTplFuncs {
-		body = r.regExp.ReplaceAllString(body, r.replace)
-	}
+	body = PrepareTplFuncs(body)
 
 	msgTpl, err := template.New(ContentTpl).Funcs(f).Parse(body)
 	if err != nil {
@@ -284,10 +280,7 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	c.Tpl = &tplRenderer{out}
 
 	if HasTplExpr(c.AltBody.String) {
-		b := c.AltBody.String
-		for _, r := range regTplFuncs {
-			b = r.regExp.ReplaceAllString(b, r.replace)
-		}
+		b := PrepareTplFuncs(c.AltBody.String)
 		bTpl, err := template.New(ContentTpl).Funcs(f).Parse(b)
 		if err != nil {
 			return fmt.Errorf("error compiling alt plaintext message: %v", err)
@@ -325,9 +318,7 @@ func compileTxtTpl(label, val string, f template.FuncMap) (*tplRenderer, error) 
 		return nil, nil
 	}
 
-	for _, r := range regTplFuncs {
-		val = r.regExp.ReplaceAllString(val, r.replace)
-	}
+	val = PrepareTplFuncs(val)
 
 	tpl, err := txttpl.New(ContentTpl).Funcs(f).Parse(val)
 	if err != nil {
