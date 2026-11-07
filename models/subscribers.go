@@ -108,11 +108,27 @@ func (subs Subscribers) LoadLists(stmt *sqlx.Stmt) error {
 // FirstName splits the name by spaces and returns the first chunk
 // of the name that's greater than 2 characters in length, assuming
 // that it is the subscriber's first name.
+// Performance optimization: Scans space-delimited chunks sequentially without
+// allocating a slice via strings.Split (0 B/op, 0 allocs).
 func (s Subscriber) FirstName() string {
-	for _, s := range strings.Split(s.Name, " ") {
-		if len(s) > 2 {
-			return s
+	rem := s.Name
+	for {
+		idx := strings.IndexByte(rem, ' ')
+		var chunk string
+		if idx == -1 {
+			chunk = rem
+		} else {
+			chunk = rem[:idx]
 		}
+
+		if len(chunk) > 2 {
+			return chunk
+		}
+
+		if idx == -1 {
+			break
+		}
+		rem = rem[idx+1:]
 	}
 
 	return s.Name
@@ -121,13 +137,27 @@ func (s Subscriber) FirstName() string {
 // LastName splits the name by spaces and returns the last chunk
 // of the name that's greater than 2 characters in length, assuming
 // that it is the subscriber's last name.
+// Performance optimization: Scans space-delimited chunks from right to left without
+// allocating a slice via strings.Split (0 B/op, 0 allocs).
 func (s Subscriber) LastName() string {
-	chunks := strings.Split(s.Name, " ")
-	for i := len(chunks) - 1; i >= 0; i-- {
-		chunk := chunks[i]
+	rem := s.Name
+	for {
+		idx := strings.LastIndexByte(rem, ' ')
+		var chunk string
+		if idx == -1 {
+			chunk = rem
+		} else {
+			chunk = rem[idx+1:]
+		}
+
 		if len(chunk) > 2 {
 			return chunk
 		}
+
+		if idx == -1 {
+			break
+		}
+		rem = rem[:idx]
 	}
 
 	return s.Name
