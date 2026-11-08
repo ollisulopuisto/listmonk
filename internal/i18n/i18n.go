@@ -149,27 +149,35 @@ func (i *I18n) FormatDate(t time.Time, layout string) string {
 
 // getSingular returns the singular term from the vuei18n pipe separated value.
 // singular term | plural term
+// Performance optimization: Uses strings.IndexByte and string slicing instead of
+// strings.Contains + strings.Split, avoiding slice allocations and intermediate string copies (0 allocs).
 func (i *I18n) getSingular(s string) string {
-	if !strings.Contains(s, "|") {
+	idx := strings.IndexByte(s, '|')
+	if idx == -1 {
 		return s
 	}
 
-	return strings.TrimSpace(strings.Split(s, "|")[0])
+	return strings.TrimSpace(s[:idx])
 }
 
 // getPlural returns the plural term from the vuei18n pipe separated value.
 // singular term | plural term
+// Performance optimization: Uses strings.IndexByte and string slicing instead of
+// strings.Contains + strings.Split, avoiding slice allocations and intermediate string copies (0 allocs).
 func (i *I18n) getPlural(s string) string {
-	if !strings.Contains(s, "|") {
+	idx := strings.IndexByte(s, '|')
+	if idx == -1 {
 		return s
 	}
 
-	chunks := strings.Split(s, "|")
-	if len(chunks) == 2 {
-		return strings.TrimSpace(chunks[1])
+	// If there are more than 2 pipe-delimited chunks (e.g. date formats "Jan | Feb | ..."),
+	// match strings.Split behavior which falls back to the first chunk when len(chunks) != 2.
+	rest := s[idx+1:]
+	if strings.IndexByte(rest, '|') != -1 {
+		return strings.TrimSpace(s[:idx])
 	}
 
-	return strings.TrimSpace(chunks[0])
+	return strings.TrimSpace(rest)
 }
 
 // subAllParams recursively resolves and replaces all {params} in a string.
