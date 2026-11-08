@@ -49,3 +49,135 @@ func TestFormatDateFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestSingularPlural(t *testing.T) {
+	inst := &I18n{}
+	tests := []struct {
+		input        string
+		wantSingular string
+		wantPlural   string
+	}{
+		{
+			input:        "Campaign",
+			wantSingular: "Campaign",
+			wantPlural:   "Campaign",
+		},
+		{
+			input:        "Campaign | Campaigns",
+			wantSingular: "Campaign",
+			wantPlural:   "Campaigns",
+		},
+		{
+			input:        "  Campaign   |   Campaigns  ",
+			wantSingular: "Campaign",
+			wantPlural:   "Campaigns",
+		},
+		{
+			input:        "January | February | March | April",
+			wantSingular: "January",
+			wantPlural:   "January",
+		},
+		{
+			input:        "Single|",
+			wantSingular: "Single",
+			wantPlural:   "",
+		},
+		{
+			input:        "|Plural",
+			wantSingular: "",
+			wantPlural:   "Plural",
+		},
+		{
+			input:        "",
+			wantSingular: "",
+			wantPlural:   "",
+		},
+	}
+
+	for _, tc := range tests {
+		if got := inst.getSingular(tc.input); got != tc.wantSingular {
+			t.Errorf("getSingular(%q) = %q, want %q", tc.input, got, tc.wantSingular)
+		}
+		if got := inst.getPlural(tc.input); got != tc.wantPlural {
+			t.Errorf("getPlural(%q) = %q, want %q", tc.input, got, tc.wantPlural)
+		}
+	}
+}
+
+func TestTandTc(t *testing.T) {
+	jsonMap := []byte(`{
+		"_.code": "en",
+		"_.name": "English",
+		"term.campaign": "Campaign | Campaigns",
+		"term.single": "SingleWord"
+	}`)
+
+	i, err := New(jsonMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := i.T("term.campaign"), "Campaign"; got != want {
+		t.Errorf("T(term.campaign) = %q, want %q", got, want)
+	}
+	if got, want := i.T("term.single"), "SingleWord"; got != want {
+		t.Errorf("T(term.single) = %q, want %q", got, want)
+	}
+	if got, want := i.Tc("term.campaign", 1), "Campaign"; got != want {
+		t.Errorf("Tc(term.campaign, 1) = %q, want %q", got, want)
+	}
+	if got, want := i.Tc("term.campaign", 2), "Campaigns"; got != want {
+		t.Errorf("Tc(term.campaign, 2) = %q, want %q", got, want)
+	}
+	if got, want := i.Tc("term.single", 2), "SingleWord"; got != want {
+		t.Errorf("Tc(term.single, 2) = %q, want %q", got, want)
+	}
+}
+
+func BenchmarkGetSingular(b *testing.B) {
+	inst := &I18n{}
+	s := "Subscriber | Subscribers"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_ = inst.getSingular(s)
+	}
+}
+
+func BenchmarkGetPlural(b *testing.B) {
+	inst := &I18n{}
+	s := "Subscriber | Subscribers"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_ = inst.getPlural(s)
+	}
+}
+
+func BenchmarkT(b *testing.B) {
+	jsonMap := []byte(`{
+		"_.code": "en",
+		"_.name": "English",
+		"term.campaign": "Campaign | Campaigns"
+	}`)
+	i, _ := New(jsonMap)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_ = i.T("term.campaign")
+	}
+}
+
+func BenchmarkTc(b *testing.B) {
+	jsonMap := []byte(`{
+		"_.code": "en",
+		"_.name": "English",
+		"term.campaign": "Campaign | Campaigns"
+	}`)
+	i, _ := New(jsonMap)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_ = i.Tc("term.campaign", 5)
+	}
+}
