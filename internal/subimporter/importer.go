@@ -646,12 +646,12 @@ func (im *Importer) SanitizeEmail(email string) (string, error) {
 	// Check if the e-mail's domain is blocklisted. The e-mail domain and blocklist config
 	// are always lowercase.
 	if im.hasAllowlist || im.hasBlocklist {
-		d := strings.Split(addr, "@")
-		if len(d) != 2 {
+		// Performance optimization: Avoid strings.Split allocation by using strings.Cut
+		// and checking for any trailing '@' (0 allocs, 0 B/op).
+		_, domain, ok := strings.Cut(addr, "@")
+		if !ok || strings.IndexByte(domain, '@') != -1 {
 			return addr, nil
 		}
-
-		domain := d[1]
 
 		// If there's an allowlist, check if the domain is in it. Checking blocklist after that is moot.
 		if im.hasAllowlist {
@@ -683,7 +683,9 @@ func (im *Importer) ValidateFields(s SubReq) (SubReq, error) {
 	// If there's no name, use the name part of the e-mail.
 	s.Name = strings.TrimSpace(s.Name)
 	if len(s.Name) == 0 {
-		name := strings.ToLower(strings.Split(s.Email, "@")[0])
+		// Performance optimization: Avoid strings.Split slice allocation by using strings.Cut (0 allocs, 0 B/op).
+		local, _, _ := strings.Cut(s.Email, "@")
+		name := strings.ToLower(local)
 
 		parts := strings.Fields(strings.ReplaceAll(name, ".", " "))
 		for n, p := range parts {
