@@ -111,6 +111,11 @@ SELECT COUNT(*) OVER () AS total, campaigns.*,
         ELSE templates.id = campaigns.archive_template_id END
     )
     WHERE campaigns.archive=true AND campaigns.type='regular' AND campaigns.status=ANY('{running, paused, finished}')
+    AND ($4 = '' OR EXISTS (
+        SELECT 1 FROM campaign_lists
+        JOIN lists ON lists.id = campaign_lists.list_id
+        WHERE campaign_lists.campaign_id = campaigns.id AND lists.uuid = NULLIF($4, '')::UUID AND lists.type = 'public'
+    ))
     ORDER by campaigns.started_at DESC NULLS LAST, campaigns.id DESC OFFSET $1 LIMIT $2;
 
 -- name: get-campaign-stats
@@ -497,3 +502,39 @@ WHERE id = ANY($1::INT[]) AND ($2 OR EXISTS (
     SELECT 1 FROM campaign_lists WHERE campaign_id = c.id AND list_id = ANY($3::INT[])
 ))
 ORDER BY ARRAY_POSITION($1::INT[], id);
+
+
+-- name: get-campaign-activity
+WITH events AS (
+    SELECT subscriber_id, 'views' AS type, created_at FROM campaign_views
+        WHERE campaign_id = ANY($1::INT[]) AND created_at BETWEEN $2 AND $3 AND subscriber_id IS NOT NULL
+    UNION ALL
+    SELECT subscriber_id, 'clicks', created_at FROM link_clicks
+        WHERE campaign_id = ANY($1::INT[]) AND created_at BETWEEN $2 AND $3 AND subscriber_id IS NOT NULL
+)
+SELECT s.id, s.email, s.name,
+    COUNT(*) FILTER (WHERE e.type = 'views') AS views,
+    COUNT(*) FILTER (WHERE e.type = 'clicks') AS clicks,
+    MAX(e.created_at) AS last_activity, COUNT(*) OVER() AS total
+FROM events e JOIN subscribers s ON s.id = e.subscriber_id
+    WHERE ($4 OR EXISTS (
+        SELECT 1 FROM subscriber_lists WHERE subscriber_id = s.id AND list_id = ANY($5::INT[])
+    ))
+    GROUP BY s.id ORDER BY clicks DESC, views DESC, last_activity DESC, s.id
+    OFFSET $6 LIMIT $7;
+
+-- name: get-campaign-activity-events
+WITH events AS (
+    SELECT id, campaign_id, 'views' AS type, '' AS url, created_at
+        FROM campaign_views
+        WHERE campaign_id = ANY($1::INT[]) AND created_at BETWEEN $2 AND $3 AND subscriber_id = $4
+    UNION ALL
+    SELECT lc.id, lc.campaign_id, 'clicks', l.url, lc.created_at
+        FROM link_clicks lc JOIN links l ON l.id = lc.link_id
+        WHERE lc.campaign_id = ANY($1::INT[]) AND lc.created_at BETWEEN $2 AND $3 AND lc.subscriber_id = $4
+)
+SELECT c.id AS campaign_id, c.name AS campaign, c.subject AS campaign_subject,
+    e.type, e.url, e.created_at, COUNT(*) OVER() AS total
+    FROM events e JOIN campaigns c ON c.id = e.campaign_id
+    ORDER BY e.created_at DESC, e.type, e.id DESC
+    OFFSET $5 LIMIT $6;

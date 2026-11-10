@@ -820,6 +820,7 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 	}
 }
 
+<<<<<<< HEAD
 // compileSubscriberQueryTpl takes an arbitrary WHERE expressions
 // to filter subscribers from the subscribers table and prepares a query
 // using the raw `query-subscribers-template` template. It sanitizes the
@@ -835,27 +836,38 @@ func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, 
 		queryExp = sanitized
 	}
 
+=======
+// querySubscriberIDs resolves an arbitrary WHERE expression to subscriber IDs
+// inside a read-only transaction. Only these IDs may be used in a writable query.
+func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) ([]int, error) {
+>>>>>>> upstream/master
 	// There's an arbitrary query condition.
 	cond := "TRUE"
 	if queryExp != "" {
 		cond = queryExp
 	}
 
+<<<<<<< HEAD
 	// Validate before executing the dry run.
 	// The query expression is intentionally raw SQL, as documented in
 	// docs/docs/content/security-reports.md; it is sanitized and dry-run read-only.
 	// codeql[go/sql-injection]
+=======
+	// Validate the same query and arguments used to select the IDs.
+>>>>>>> upstream/master
 	stmt := strings.ReplaceAll(c.q.QuerySubscribersTpl, "%query%", cond)
-	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
-		return "", err
+	args := []any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}
+	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, args...); err != nil {
+		return nil, err
 	}
 
 	tx, err := c.beginSubQueryTx(true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback()
 
+<<<<<<< HEAD
 	// Perform the dry run.
 	// codeql[go/sql-injection]
 	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
@@ -865,9 +877,14 @@ func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, 
 	// subscribers:sql_query feature; CodeQL cannot model the combined defences.
 	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
 		return "", err
+=======
+	var ids []int
+	if err := tx.Select(&ids, stmt, args...); err != nil {
+		return nil, err
+>>>>>>> upstream/master
 	}
 
-	return stmt, nil
+	return ids, nil
 }
 
 // execSubQueryTpl takes an arbitrary WHERE expressions and a subscriber
@@ -876,24 +893,29 @@ func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, 
 func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, subStatus, subscriberStatus string, args ...any) error {
 	queryExp, subStatus = models.ApplyOrphanFilter(queryExp, subStatus)
 
-	// Perform a dry run.
-	filterExp, err := c.compileSubscriberQueryTpl(searchStr, queryExp, subStatus, subscriberStatus)
-	if err != nil {
-		return err
-	}
-
 	if len(listIDs) == 0 {
 		listIDs = []int{}
 	}
 
+<<<<<<< HEAD
 	// Insert the subscriber filter query into the target query.
 	// filterExp is produced by compileSubscriberQueryTpl after sanitization and
 	// a read-only dry run. This preserves the documented SQL query feature.
 	// codeql[go/sql-injection]
 	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", filterExp)
+=======
+	ids, err := c.querySubscriberIDs(searchStr, queryExp, listIDs, subStatus, subscriberStatus)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+>>>>>>> upstream/master
 
-	// First argument is the boolean indicating if the query is a dry run.
-	a := append([]any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}, args...)
+	// Never interpolate the user expression into a writable statement.
+	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", "SELECT UNNEST($1::INT[]) AS id")
+	a := append([]any{pq.Array(ids)}, args...)
 
 	// Execute the query on the DB in a bounded transaction.
 	tx, err := c.beginSubQueryTx(false)

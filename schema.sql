@@ -178,10 +178,12 @@ CREATE TABLE media (
     filename         TEXT NOT NULL,
     content_type     TEXT NOT NULL DEFAULT 'application/octet-stream',
     thumb            TEXT NOT NULL,
+    tags             TEXT[] NOT NULL DEFAULT '{}',
     meta             JSONB NOT NULL DEFAULT '{}',
     created_at       TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 DROP INDEX IF EXISTS idx_media_filename; CREATE INDEX idx_media_filename ON media(provider, filename);
+DROP INDEX IF EXISTS idx_media_tags; CREATE INDEX idx_media_tags ON media USING GIN(tags);
 
 -- campaign_media
 DROP TABLE IF EXISTS campaign_media CASCADE;
@@ -266,7 +268,7 @@ INSERT INTO settings (key, value) VALUES
     ('privacy.domain_allowlist', '[]'),
     ('privacy.record_optin_ip', 'false'),
     ('security.captcha', '{"altcha": {"enabled": false, "complexity": 300000}, "hcaptcha": {"enabled": false, "key": "", "secret": ""}}'),
-    ('security.oidc', '{"enabled": false, "provider_url": "", "provider_name": "", "client_id": "", "client_secret": "", "auto_create_users": false, "logout": false, "verify_email": true, "default_user_role_id": null, "default_list_role_id": null, "roles": []}'),
+    ('security.oidc', '{"enabled": false, "provider_url": "", "redirect_url": "", "provider_name": "", "client_id": "", "client_secret": "", "auto_create_users": false, "auto_sync_roles": false, "logout": false, "verify_email": true, "default_user_role_id": null, "default_list_role_id": null, "roles": []}'),
     ('security.trusted_urls', '[]'),
     ('security.session_duration', '"7d"'),
     ('upload.provider', '"filesystem"'),

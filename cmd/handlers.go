@@ -218,8 +218,10 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		g.DELETE("/api/campaigns/:id", pm(hasID(a.DeleteCampaign), auth.PermCampaignsManageAll, auth.PermCampaignsManage))
 
 		g.GET("/api/media", pm(a.GetAllMedia, auth.PermMediaGet))
+		g.GET("/api/media/tags", pm(a.GetMediaTags, auth.PermMediaGet))
 		g.GET("/api/media/:id", pm(hasID(a.GetMedia), auth.PermMediaGet))
 		g.POST("/api/media", pm(a.UploadMedia, auth.PermMediaManage))
+		g.PUT("/api/media/:id", pm(hasID(a.UpdateMedia), auth.PermMediaManage))
 		g.DELETE("/api/media/:id", pm(hasID(a.DeleteMedia), auth.PermMediaManage))
 
 		g.GET("/api/templates", pm(a.GetTemplates, auth.PermTemplatesGet))
@@ -323,6 +325,7 @@ func initHTTPHandlers(e *echo.Echo, a *App) {
 		if a.cfg.EnablePublicArchive {
 			g.GET("/archive", a.CampaignArchivesPage)
 			g.GET("/archive.xml", a.GetCampaignArchivesFeed)
+			g.GET("/archive/list/:listUUID", a.ListArchivePage)
 			g.GET("/archive/:id", a.CampaignArchivePage)
 			g.GET("/archive/latest", a.CampaignArchivePageLatest)
 		}

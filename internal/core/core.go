@@ -180,6 +180,7 @@ func strSliceContains(str string, sl []string) bool {
 	return false
 }
 
+<<<<<<< HEAD
 // normalizeTags takes a list of string tags and normalizes them by
 // lower casing and replacing whitespace with dashes.
 // Performance optimization: Avoids regexp overhead, []byte conversions, and allocations
@@ -191,6 +192,14 @@ func normalizeTags(tags []string) []string {
 		fields := strings.Fields(strings.ToLower(t))
 		if len(fields) > 0 {
 			out = append(out, strings.Join(fields, "-"))
+=======
+// normalizeTags lowercases tags and replaces whitespace with dashes.
+func normalizeTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t = regexpSpaces.ReplaceAllString(strings.ToLower(strings.TrimSpace(t)), "-"); t != "" {
+			out = append(out, t)
+>>>>>>> upstream/master
 		}
 	}
 	return out

@@ -111,6 +111,34 @@ test('shows the seeded campaign and previews it from the listing', async ({ page
   await expect(page.locator('.preview-modal iframe')).not.toHaveAttribute('src');
 });
 
+test('opens existing campaigns on View and preserves explicit editor tabs', async ({ page }) => {
+  const c = await create(page, { name: 'View newsletter', tags: ['news'], lists: [1, 2] });
+  await page.goto(CAMPAIGNS);
+  await row(page, c.name).getByRole('link', { name: c.name, exact: true }).click();
+  await expect(tab(page, 'View')).toHaveAttribute('aria-selected', 'true');
+  const view = page.getByRole('tabpanel');
+  await expect(view).toContainText(c.subject);
+  await expect(view).toContainText(c.from_email);
+  await expect(view.getByRole('button', { name: 'ID', exact: true })).toContainText(String(c.id));
+  await expect(view.getByRole('button', { name: 'UUID', exact: true })).toContainText(c.uuid);
+  await expect(view.getByRole('link', { name: 'Default list', exact: true })).toHaveAttribute('href', '/admin/lists/1');
+  await expect(view.getByRole('link', { name: 'Opt-in list', exact: true })).toHaveAttribute('href', '/admin/lists/2');
+  await expect(view.getByRole('link', { name: '#news', exact: true })).toHaveAttribute('href', `${CAMPAIGNS}?tag=news`);
+  await expect(page.getByLabel('Name', { exact: true })).toBeHidden();
+
+  await tab(page, 'Campaign').click();
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(c.name);
+  await page.reload();
+  await expect(tab(page, 'Campaign')).toHaveAttribute('aria-selected', 'true');
+  await tab(page, 'View').click();
+  await page.reload();
+  await expect(tab(page, 'View')).toHaveAttribute('aria-selected', 'true');
+  await page.goto(`${CAMPAIGNS}/${c.id}#tab=content`);
+  await expect(tab(page, 'Content')).toHaveAttribute('aria-selected', 'true');
+  await editorReady(page);
+  await preview(page, rendered);
+});
+
 for (const format of ['richtext', 'html', 'markdown', 'plain', 'visual']) {
   for (const lists of [['Default list'], ['Default list', 'Opt-in list']]) {
     test(`creates, edits and previews ${format} with ${lists.length} list(s)`, async ({ page }) => {
@@ -155,12 +183,13 @@ for (const format of ['richtext', 'html', 'markdown', 'plain', 'visual']) {
 test('edits metadata, schedules in local time, unschedules and clears the schedule', async ({ page }) => {
   const c = await create(page, { lists: [2], tags: ['old'] });
   await page.goto(`${CAMPAIGNS}/${c.id}`);
+  await tab(page, 'Campaign').click();
   await page.getByLabel('Name', { exact: true }).fill('Scheduled newsletter');
   await page.getByLabel('Subject', { exact: true }).fill('Updated subject');
   await page.locator('input[name="from_email"]').fill('New <new@example.com>');
   const listField = page.locator('fieldset').filter({ has: page.locator('#campaign-lists') });
   await listField.locator('.badge').hover();
-  await button(listField, 'Remove Opt-in list').click();
+  await listField.getByRole('button', { name: /^Remove .*Opt-in list$/ }).click();
   await selectList(listField, 'Default list');
   const tags = page.getByPlaceholder('Tags', { exact: true });
   await tags.press('Backspace');
@@ -188,6 +217,7 @@ test('edits metadata, schedules in local time, unschedules and clears the schedu
   expect(new Date(saved.send_at).toISOString()).toBe(iso);
   expect(saved.lists.map((l) => l.id)).toEqual([1]);
   await page.goto(`${CAMPAIGNS}/${c.id}`);
+  await tab(page, 'Campaign').click();
   await expect(page.locator('input[name="send_at"]')).toHaveValue(when);
   await button(page, 'Unschedule').click();
   await confirm(page);
@@ -545,6 +575,8 @@ test('uploads an attachment, persists it and delivers it when starting from the 
   await picker.locator('input[type="file"]').setInputFiles({ name: 'campaign-example.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":"attachment"}') });
   await picker.locator('button[type="submit"]').filter({ hasText: 'Upload' }).click();
   await picker.locator('a.thumb').and(picker.getByTitle('campaign-example.json', { exact: true })).click();
+  await expect(picker.locator('.media-preview .ext')).toHaveText('JSON');
+  await button(picker.locator('.media-preview'), 'Insert').click();
   await expect(page.locator('.media-picker-modal')).not.toBeVisible();
   await save(page, c.id);
   await page.reload();
@@ -559,6 +591,7 @@ test('uploads an attachment, persists it and delivers it when starting from the 
   await page.reload();
   await expect(row(page, c.name)).toContainText('Finished');
   await page.goto(`${CAMPAIGNS}/${c.id}`);
+  await tab(page, 'Campaign').click();
   await expect(page.getByLabel('Name', { exact: true })).toBeDisabled();
   await expect(button(page, 'Start campaign')).toHaveCount(0);
   await tab(page, 'Archive').click();
@@ -606,7 +639,10 @@ for (const format of ['richtext', 'visual']) {
         await button(page, 'Image').click();
         const dialog = page.locator('richtext-editor dialog[open]');
         await button(dialog, 'Media').click();
-        await page.frameLocator('.media-picker-modal iframe').getByRole('link', { name: media.filename, exact: true }).click();
+        const picker = page.frameLocator('.media-picker-modal iframe');
+        await picker.getByRole('link', { name: media.filename, exact: true }).click();
+        await expect(picker.locator('.media-preview img')).toHaveAttribute('src', media.url);
+        await button(picker.locator('.media-preview'), 'Insert').click();
         await expect(dialog.locator('input[name="src"]')).toHaveValue(media.url);
         await dialog.getByRole('checkbox', { name: 'Embed', exact: true }).setChecked(embed);
         await button(dialog, 'Insert').click();
