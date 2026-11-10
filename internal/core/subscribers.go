@@ -820,41 +820,16 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 	}
 }
 
-<<<<<<< HEAD
-// compileSubscriberQueryTpl takes an arbitrary WHERE expressions
-// to filter subscribers from the subscribers table and prepares a query
-// using the raw `query-subscribers-template` template. It sanitizes the
-// query by dry-running it as a read only query.
-func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, subscriberStatus string) (string, error) {
-	// Sanitize the arbitrary query condition before it is interpolated into
-	// the SQL statement, defending against SQL injection.
-	if queryExp != "" {
-		sanitized, err := sanitizeSQLExp(queryExp)
-		if err != nil {
-			return "", err
-		}
-		queryExp = sanitized
-	}
-
-=======
 // querySubscriberIDs resolves an arbitrary WHERE expression to subscriber IDs
 // inside a read-only transaction. Only these IDs may be used in a writable query.
 func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) ([]int, error) {
->>>>>>> upstream/master
 	// There's an arbitrary query condition.
 	cond := "TRUE"
 	if queryExp != "" {
 		cond = queryExp
 	}
 
-<<<<<<< HEAD
-	// Validate before executing the dry run.
-	// The query expression is intentionally raw SQL, as documented in
-	// docs/docs/content/security-reports.md; it is sanitized and dry-run read-only.
-	// codeql[go/sql-injection]
-=======
 	// Validate the same query and arguments used to select the IDs.
->>>>>>> upstream/master
 	stmt := strings.ReplaceAll(c.q.QuerySubscribersTpl, "%query%", cond)
 	args := []any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}
 	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, args...); err != nil {
@@ -867,21 +842,9 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 	}
 	defer tx.Rollback()
 
-<<<<<<< HEAD
-	// Perform the dry run.
-	// codeql[go/sql-injection]
-	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
-	// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
-	// a read-only transaction with a statement timeout as a read-only dry run; its tables
-	// are allowlisted by validateQueryTables. Intentional permission-gated
-	// subscribers:sql_query feature; CodeQL cannot model the combined defences.
-	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
-		return "", err
-=======
 	var ids []int
 	if err := tx.Select(&ids, stmt, args...); err != nil {
 		return nil, err
->>>>>>> upstream/master
 	}
 
 	return ids, nil
@@ -897,13 +860,6 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 		listIDs = []int{}
 	}
 
-<<<<<<< HEAD
-	// Insert the subscriber filter query into the target query.
-	// filterExp is produced by compileSubscriberQueryTpl after sanitization and
-	// a read-only dry run. This preserves the documented SQL query feature.
-	// codeql[go/sql-injection]
-	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", filterExp)
-=======
 	ids, err := c.querySubscriberIDs(searchStr, queryExp, listIDs, subStatus, subscriberStatus)
 	if err != nil {
 		return err
@@ -911,7 +867,6 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	if len(ids) == 0 {
 		return nil
 	}
->>>>>>> upstream/master
 
 	// Never interpolate the user expression into a writable statement.
 	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", "SELECT UNNEST($1::INT[]) AS id")
@@ -925,12 +880,9 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	defer tx.Rollback()
 
 	// codeql[go/sql-injection]
-	// `stmt` embeds a subscriber filter expression produced by compileSubscriberQueryTpl
-	// after sanitizeSQLExp and a read-only dry run, so it has already been validated:
-	// sanitizeSQLExp rejects multi-statement input, SQL comments and DDL/DML keywords,
-	// the transaction is read-only with a statement timeout, and its tables are allowlisted
-	// by validateQueryTables. Intentional permission-gated subscribers:sql_query feature;
-	// CodeQL cannot model the combined defences.
+	// `stmt` embeds no user expression: the arbitrary filter ran separately in
+	// querySubscriberIDs (table-allowlisted, read-only, statement timeout) and
+	// only the resulting integer IDs are bound here as a parameter array.
 	if _, err := tx.Exec(stmt, a...); err != nil {
 		return err
 	}

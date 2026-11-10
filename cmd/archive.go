@@ -127,12 +127,7 @@ func (a *App) CampaignArchivePage(c *echo.Context) error {
 		idStr      = c.Param("id")
 		uuid, slug string
 	)
-<<<<<<< HEAD
 	if utils.IsValidUUID(idStr) {
-=======
-
-	if reUUID.MatchString(idStr) {
->>>>>>> upstream/master
 		uuid = idStr
 	} else {
 		slug = idStr
@@ -203,7 +198,7 @@ func (a *App) CampaignArchivePageLatest(c *echo.Context) error {
 // ListArchivePage renders a list's public archives or RSS feed.
 func (a *App) ListArchivePage(c *echo.Context) error {
 	listUUID := c.Param("listUUID")
-	if !reUUID.MatchString(strings.TrimSuffix(listUUID, ".xml")) {
+	if !utils.IsValidUUID(strings.TrimSuffix(listUUID, ".xml")) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.T("globals.messages.invalidUUID"))
 	}
 

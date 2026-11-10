@@ -103,12 +103,8 @@ function component(list = null) {
         type: this.form.type,
         optin: this.form.optin,
         status: this.form.status,
-<<<<<<< HEAD
-        tags: this.form.tags,
-        subject_prefix: this.form.subject_prefix || '',
-=======
         tags: u.normalizeTags(this.form.tags),
->>>>>>> upstream/master
+        subject_prefix: this.form.subject_prefix || '',
         description: this.form.description || '',
       };
     },

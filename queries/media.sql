@@ -4,20 +4,17 @@ INSERT INTO media (uuid, filename, thumb, content_type, provider, meta, tags, cr
 
 -- name: query-media
 SELECT COUNT(*) OVER () AS total, * FROM media
-<<<<<<< HEAD
-    WHERE ($1 = '' OR filename ILIKE $1) AND provider=$2
-    AND (COALESCE(CARDINALITY($5::TEXT[]), 0) = 0 OR filename ILIKE ANY($5))
-    ORDER BY created_at DESC OFFSET $3 LIMIT $4;
-=======
     WHERE ($1 = '' OR filename ILIKE $1 OR EXISTS (SELECT 1 FROM UNNEST(tags) AS tag WHERE tag ILIKE $1))
-        AND provider=$2 AND (CARDINALITY($5::TEXT[]) = 0 OR tags @> $5::TEXT[])
+        AND provider=$2
+        AND (COALESCE(CARDINALITY($5::TEXT[]), 0) = 0 OR filename ILIKE ANY($5))
+        AND (COALESCE(CARDINALITY($6::TEXT[]), 0) = 0 OR tags @> $6::TEXT[])
     ORDER BY created_at DESC OFFSET $3 LIMIT $4;
 
 -- name: get-media-tags
 SELECT tag, COUNT(DISTINCT id) AS count
     FROM media CROSS JOIN UNNEST(tags) AS tag
-    WHERE provider=$1 GROUP BY tag ORDER BY tag;
->>>>>>> upstream/master
+    WHERE provider=$1 AND (COALESCE(CARDINALITY($2::TEXT[]), 0) = 0 OR filename ILIKE ANY($2))
+    GROUP BY tag ORDER BY tag;
 
 -- name: get-media
 SELECT * FROM media WHERE

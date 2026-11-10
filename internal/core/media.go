@@ -15,11 +15,7 @@ import (
 )
 
 // QueryMedia returns media entries optionally filtered by a query string.
-<<<<<<< HEAD
-func (c *Core) QueryMedia(provider string, s media.Store, query string, prefixes []string, offset, limit int) ([]media.Media, int, error) {
-=======
-func (c *Core) QueryMedia(provider string, s media.Store, query string, tags []string, offset, limit int) ([]media.Media, int, error) {
->>>>>>> upstream/master
+func (c *Core) QueryMedia(provider string, s media.Store, query string, prefixes, tags []string, offset, limit int) ([]media.Media, int, error) {
 	out := []media.Media{}
 	if tags == nil {
 		tags = []string{}
@@ -29,15 +25,14 @@ func (c *Core) QueryMedia(provider string, s media.Store, query string, tags []s
 		query = strings.ToLower(query)
 	}
 
-<<<<<<< HEAD
 	if prefixes == nil {
 		prefixes = []string{}
 	}
+	if tags == nil {
+		tags = []string{}
+	}
 
-	if err := c.q.QueryMedia.Select(&out, fmt.Sprintf("%%%s%%", query), provider, offset, limit, pq.StringArray(prefixes)); err != nil {
-=======
-	if err := c.q.QueryMedia.Select(&out, fmt.Sprintf("%%%s%%", query), provider, offset, limit, pq.StringArray(tags)); err != nil {
->>>>>>> upstream/master
+	if err := c.q.QueryMedia.Select(&out, fmt.Sprintf("%%%s%%", query), provider, offset, limit, pq.StringArray(prefixes), pq.StringArray(tags)); err != nil {
 		return out, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching",
 				"name", "{globals.terms.media}", "error", pqErrMsg(err)))
@@ -85,10 +80,14 @@ func (c *Core) GetMedia(id int, uuid, fileName string, s media.Store) (media.Med
 	return out, nil
 }
 
-// GetMediaTags returns tags for the given provider.
-func (c *Core) GetMediaTags(provider string) ([]media.Tag, error) {
+// GetMediaTags returns tags for the given provider, limited to the media
+// filename prefixes the user is permitted to see (same guard as QueryMedia).
+func (c *Core) GetMediaTags(provider string, prefixes []string) ([]media.Tag, error) {
 	out := []media.Tag{}
-	if err := c.q.GetMediaTags.Select(&out, provider); err != nil {
+	if prefixes == nil {
+		prefixes = []string{}
+	}
+	if err := c.q.GetMediaTags.Select(&out, provider, pq.StringArray(prefixes)); err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.tags}", "error", pqErrMsg(err)))
 	}
