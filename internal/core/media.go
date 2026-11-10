@@ -115,9 +115,16 @@ func (c *Core) InsertMedia(fileName, thumbName, contentType string, meta models.
 	return c.GetMedia(newID, "", "", s)
 }
 
-// UpdateMedia updates a media item's tags.
-func (c *Core) UpdateMedia(id int, tags []string, s media.Store) (media.Media, error) {
-	res, err := c.q.UpdateMedia.Exec(id, pq.StringArray(normalizeTags(tags)))
+// UpdateMedia updates a media item's tags. The update is scoped to the
+// active provider and, when prefixes is non-empty, to the media filename
+// prefixes the user is permitted to see (same guard as QueryMedia), so a
+// list-restricted user cannot modify another list's media by ID. An item
+// outside that scope yields ErrNotFound.
+func (c *Core) UpdateMedia(id int, provider string, prefixes, tags []string, s media.Store) (media.Media, error) {
+	if prefixes == nil {
+		prefixes = []string{}
+	}
+	res, err := c.q.UpdateMedia.Exec(id, provider, pq.StringArray(prefixes), pq.StringArray(normalizeTags(tags)))
 	if err != nil {
 		return media.Media{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.media}", "error", pqErrMsg(err)))

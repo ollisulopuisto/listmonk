@@ -314,7 +314,7 @@ func (a *App) UpdateMedia(c *echo.Context) error {
 		return err
 	}
 
-	out, err := a.core.UpdateMedia(getID(c), m.Tags, a.media)
+	out, err := a.core.UpdateMedia(getID(c), a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)), m.Tags, a.media)
 	if err != nil {
 		return err
 	}

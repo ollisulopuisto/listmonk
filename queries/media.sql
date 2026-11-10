@@ -26,7 +26,14 @@ SELECT * FROM media WHERE
     END;
 
 -- name: update-media
-UPDATE media SET tags=$2::TEXT[] WHERE id=$1;
+-- Scoped to the active provider and, when $3 carries permitted filename
+-- prefixes (same guard as query-media), to items the user may see. An item
+-- outside that scope matches no row and the caller returns 404, so a
+-- list-restricted user cannot modify another list's media by ID.
+UPDATE media SET tags=$4::TEXT[]
+    WHERE id=$1
+        AND provider=$2
+        AND (COALESCE(CARDINALITY($3::TEXT[]), 0) = 0 OR filename ILIKE ANY($3));
 
 -- name: delete-media
 DELETE FROM media WHERE id=$1 RETURNING filename;
