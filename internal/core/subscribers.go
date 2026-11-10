@@ -843,7 +843,6 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 	defer tx.Rollback()
 
 	var ids []int
-	// codeql[go/sql-injection]
 	// `stmt` embeds a subscriber filter expression that callers have already
 	// passed through sanitizeSQLExp (rejects multi-statement input, SQL
 	// comments and DDL/DML keywords), its tables are allowlisted by
@@ -851,6 +850,7 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 	// timeout; only the resulting integer IDs are bound into writable
 	// statements. Intentional permission-gated subscribers:sql_query feature;
 	// CodeQL cannot model the combined defences.
+	// codeql[go/sql-injection]
 	if err := tx.Select(&ids, stmt, args...); err != nil {
 		return nil, err
 	}
