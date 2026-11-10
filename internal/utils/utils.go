@@ -79,9 +79,11 @@ func SanitizeURI(u string) string {
 	}
 
 	// Fast path: relative paths without schemes, protocol-relative prefixes (//),
-	// directory traversals (..), escapes (\), or URL encoding (%).
+	// directory traversals (..), escapes (\), URL encoding (%), or control characters
+	// (tabs/newlines etc. that browsers strip, which could reassemble an external URL).
 	if strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
-		!strings.Contains(u, "..") && !strings.Contains(u, `\`) && !strings.Contains(u, "%") {
+		!strings.Contains(u, "..") && !strings.Contains(u, `\`) && !strings.Contains(u, "%") &&
+		strings.IndexFunc(u, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0 {
 		p := u
 		if idx := strings.IndexAny(p, "?#"); idx != -1 {
 			p = p[:idx]
