@@ -101,16 +101,59 @@ func TestSanitizeURI(t *testing.T) {
 	}{
 		{"/admin", "/admin"},
 		{"  /admin  ", "/admin"},
+		{"/admin/subscribers?page=2&sort=name", "/admin/subscribers"},
+		{"/admin/campaigns#section", "/admin/campaigns"},
+		{"/", "/"},
+		{"   ", "/"},
 		{"http://example.com/admin", "/admin"},
+		{"https://example.com/admin?next=/foo", "/admin"},
 		{"//example.com/admin", "/admin"},
+		{"///example.com/admin", "/example.com/admin"},
 		{"", "/"},
 		{"/path/../forbidden", "/"},
+		{"/../forbidden", "/"},
+		{"../forbidden", "/"},
+		{"forbidden", "forbidden"},
+		{`/\example.com`, `/\example.com`},
+		{`/foo\bar`, `/foo\bar`},
+		{"/foo%2e%2e/bar", "/"},
+		{"/%2e%2e/bar", "/"},
+		{"/path/%2e%2e", "/"},
+		{"/admin?q=a%20b", "/admin"},
+		{"javascript:alert(1)", "."},
 	}
 
 	for _, test := range tests {
 		if result := SanitizeURI(test.input); result != test.expected {
 			t.Errorf("SanitizeURI(%q) = %q; want %q", test.input, result, test.expected)
 		}
+	}
+}
+
+func BenchmarkSanitizeURI_Relative(b *testing.B) {
+	u := "/admin/subscribers?page=2"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = SanitizeURI(u)
+	}
+}
+
+func BenchmarkSanitizeURI_Root(b *testing.B) {
+	u := "/"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = SanitizeURI(u)
+	}
+}
+
+func BenchmarkSanitizeURI_Absolute(b *testing.B) {
+	u := "https://example.com/admin/subscribers?page=2"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = SanitizeURI(u)
 	}
 }
 
