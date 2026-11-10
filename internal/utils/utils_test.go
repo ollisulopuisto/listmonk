@@ -121,6 +121,11 @@ func TestSanitizeURI(t *testing.T) {
 		{"/path/%2e%2e", "/"},
 		{"/admin?q=a%20b", "/admin"},
 		{"javascript:alert(1)", "."},
+		{"/\t/evil.example", "/"},
+		{"/\n/evil.example", "/"},
+		{"/\r/evil.example", "/"},
+		{"/admin/\tnext", "/"},
+		{"/\x7f/evil.example", "/"},
 	}
 
 	for _, test := range tests {
