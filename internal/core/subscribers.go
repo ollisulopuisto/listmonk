@@ -39,8 +39,16 @@ func (c *Core) beginSubQueryTx(readOnly bool) (*sqlx.Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The value is a compile-time constant; SET does not accept bind params.
+	// The values are compile-time constants; SET does not accept bind params.
 	if _, err := tx.Exec("SET LOCAL statement_timeout = '" + subQueryStatementTimeout + "'"); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	// sanitizeSQLExp scans string literals honouring only doubled '' escapes,
+	// which matches PostgreSQL only under standard_conforming_strings=on.
+	// Pin it so the sanitizer and the database can never disagree about
+	// backslash escapes, whatever the server or role default is.
+	if _, err := tx.Exec("SET LOCAL standard_conforming_strings = on"); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -749,6 +757,13 @@ func validateQueryTables(db *sqlx.DB, query string, allowedTables map[string]str
 		return err
 	}
 	defer tx.Rollback()
+
+	// Parse the statement under the same pinned string-literal semantics the
+	// sanitizer and the execution transactions use (see beginSubQueryTx), so
+	// the allowlist check sees the same statement the database would run.
+	if _, err := tx.Exec("SET LOCAL standard_conforming_strings = on"); err != nil {
+		return err
+	}
 
 	var plan string
 	// codeql[go/sql-injection]

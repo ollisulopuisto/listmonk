@@ -77,6 +77,9 @@ func TestSubscriptionByQueryActionsRejectInjection(t *testing.T) {
 		// function checks but must be rejected by the paren-depth validation.
 		"FALSE) OR (TRUE",
 		"TRUE)) IS TRUE OR ((TRUE",
+		// Escape string literal breakout: E'\'' hides its real end from a
+		// plain-quote scan, exposing the depth-zero close.
+		`name = E'\'' ) OR (TRUE`,
 		"TRUE; DROP TABLE subscribers",
 		"/* comment */ TRUE",
 		"pg_sleep(5)",
@@ -229,7 +232,7 @@ func TestSubscriptionByQueryActionsSourceListBoundaryPG(t *testing.T) {
 	// parenthesis; "FALSE) OR (TRUE" needs no comment and breaks out of the
 	// AND group on the goyesql-collapsed single-line statement form. Both
 	// must be rejected with no side effects.
-	injected := []string{"TRUE) OR TRUE --", "FALSE) OR (TRUE"}
+	injected := []string{"TRUE) OR TRUE --", "FALSE) OR (TRUE", `name = E'\'' ) OR (TRUE`}
 	before := subListRows(t, c)
 
 	for _, inj := range injected {

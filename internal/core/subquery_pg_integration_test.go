@@ -68,6 +68,38 @@ func TestBeginSubQueryTxStatementTimeoutPG(t *testing.T) {
 	t.Logf("long query cancelled after %v: %v", time.Since(start).Round(time.Millisecond), err)
 }
 
+// TestBeginSubQueryTxPinsStandardConformingStringsPG proves the sub-query
+// transaction pins standard_conforming_strings=on, so sanitizeSQLExp's
+// plain-quote scan (doubled ” escapes only) matches the database's parse
+// of string literals containing backslashes whatever the server default is.
+func TestBeginSubQueryTxPinsStandardConformingStringsPG(t *testing.T) {
+	c := &Core{db: pgTestDB(t)}
+
+	tx, err := c.beginSubQueryTx(true)
+	if err != nil {
+		t.Fatalf("beginSubQueryTx: %v", err)
+	}
+	defer tx.Rollback()
+
+	var got string
+	if err := tx.Get(&got, "SHOW standard_conforming_strings"); err != nil {
+		t.Fatalf("SHOW standard_conforming_strings: %v", err)
+	}
+	if got != "on" {
+		t.Fatalf("standard_conforming_strings = %q, want on", got)
+	}
+
+	// Under the pinned setting a backslash is inert in a plain literal, so
+	// the regex escapes sanitizeSQLExp allows still execute as intended.
+	var n int
+	if err := tx.Get(&n, `SELECT count(*) FROM (VALUES ('a.io'), ('axio')) AS v(email) WHERE v.email ~ 'a\.io'`); err != nil {
+		t.Fatalf("regex filter with backslash: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("regex filter returned %d rows, want 1", n)
+	}
+}
+
 // TestBeginSubQueryTxReadOnlyPG proves that a read-only sub-query
 // transaction rejects writes, so a filter cannot be coerced into a write.
 func TestBeginSubQueryTxReadOnlyPG(t *testing.T) {

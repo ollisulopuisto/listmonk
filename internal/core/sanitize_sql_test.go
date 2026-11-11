@@ -36,6 +36,31 @@ func TestSanitizeSQLExpRejectsInjection(t *testing.T) {
 		"(TRUE",
 		"TRUE(",
 		"name = 'a') OR ('1'='1",
+		// Escape string literals (E'...') process backslash escapes, so a
+		// plain-quote scan misreads their end and hides the depth-zero close
+		// (and any non-allowlisted function call) after it. Refused outright.
+		`name = E'\'' ) OR (TRUE`,
+		`name = e'\'') OR (TRUE`,
+		`TRUE AND E'\'' IS NULL) OR (TRUE`,
+		`E'\'' IS NULL) OR (pg_sleep(2) IS NULL OR name IS NOT NULL`,
+		`name = E'x'`,
+		`name = e'media'`,
+		`E'' = ''`,
+		// Unicode escape literals process backslash/UESCAPE escapes; refused.
+		`name = U&'d\0061t'`,
+		`name = u&'x'`,
+		`U&"x" = 'y'`,
+		`name = U&'a' UESCAPE '!'`,
+		// Bit strings: refused with the other prefixed literals.
+		"flags = b'1010'",
+		"flags = X'1A'",
+		// Unterminated literals fail closed (they are never valid SQL).
+		"name = 'abc",
+		"name = \"abc",
+		"name = $$abc",
+		"name = $tag$abc ) OR ( TRUE",
+		// A '' pair inside a literal does not rebalance a later breakout.
+		"name = 'it''s' ) OR (TRUE",
 	}
 	for _, q := range reject {
 		if _, err := sanitizeSQLExp(q); err == nil {
@@ -57,6 +82,17 @@ func TestSanitizeSQLExpRejectsInjection(t *testing.T) {
 		"(name = 'a' OR name = 'b') AND email LIKE '%(x)%'",
 		"lower(email) IN (SELECT lower('a@example.com'))",
 		"email LIKE '%''quoted''%'",
+		"name = 'it''s'",
+		// Dollar-quoted strings, including quotes, backslashes and parens
+		// inside them.
+		"name = $$it's 'quoted'$$",
+		"name = $tag$a ) OR ( b$tag$",
+		"name = $q$back\\slash$q$",
+		// Backslashes in plain literals are inert under the pinned
+		// standard_conforming_strings=on and stay usable for regex filters.
+		`email ~* '@(a|b)\.com$'`,
+		`name = 'a\b'`,
+		`email LIKE '%\_%' ESCAPE '!'`,
 	}
 	for _, q := range accept {
 		if _, err := sanitizeSQLExp(q); err != nil {

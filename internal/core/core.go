@@ -206,8 +206,11 @@ func normalizeTags(tags []string) []string {
 var disallowedSQL = regexp.MustCompile(`(?i)^(drop|truncate|create|alter|insert|update|delete|copy|vacuum|exec|execute)\b`)
 
 // sanitizeSQLExp does basic sanitisation on arbitrary SQL query expressions
-// coming from the frontend. It rejects multi-statement input, SQL comments
-// and DDL/DML keywords so the expression can only be used as a WHERE clause.
+// coming from the frontend. It rejects multi-statement input, SQL comments,
+// DDL/DML keywords, unbalanced/breakout parentheses, non-allowlisted
+// function calls and literal forms whose escape rules a scanner could
+// mismatch against the database (E'...', U&'...', backslashes in string
+// literals), so the expression can only be used as a WHERE clause.
 func sanitizeSQLExp(q string) (string, error) {
 	q = strings.TrimSpace(q)
 	if len(q) == 0 {
@@ -282,96 +285,231 @@ var allowedSQLExpFuncs = map[string]struct{}{
 	"time": {}, "interval": {}, "bit": {},
 }
 
-// validateSQLExpParens ensures the expression's parentheses are balanced
-// and that it never closes a parenthesis it did not open. Filter expressions
-// are interpolated textually into `AND (%query%)` positions; a `)` at depth
-// zero would close that surrounding group (eg `FALSE) OR (TRUE`), turning
-// the ANDed conditions that enforce permitted-list scoping into no-ops.
-// String literals, quoted identifiers, dollar-quoted strings and comments
-// are skipped with the same lexer rules as validateSQLExpFunctions.
-func validateSQLExpParens(q string) error {
-	depth := 0
+// sqlExpTokenKind classifies the lexical units of a filter expression that
+// matter for validation. Everything that is not an identifier, literal or
+// parenthesis (operators, numbers, punctuation) collapses into sqlTokOther.
+type sqlExpTokenKind int
+
+const (
+	sqlTokIdent sqlExpTokenKind = iota
+	sqlTokQuotedIdent
+	sqlTokString
+	sqlTokLParen
+	sqlTokRParen
+	sqlTokOther
+)
+
+// sqlExpToken is one lexical unit of a filter expression. name carries the
+// lowercased identifier for sqlTokIdent and the decoded (unquoted,
+// ""-unescaped) lowercased identifier for sqlTokQuotedIdent.
+type sqlExpToken struct {
+	kind sqlExpTokenKind
+	name string
+}
+
+func isSQLIdentStart(c byte) bool {
+	// PostgreSQL allows non-ASCII letters in identifiers; treating every
+	// high byte as identifier material keeps unknown function-like names
+	// subject to the allowlist instead of slipping past it.
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+}
+
+func isSQLIdentChar(c byte) bool {
+	return isSQLIdentStart(c) || (c >= '0' && c <= '9') || c == '$'
+}
+
+// lexSQLExp tokenises a filter expression so validators never mistake the
+// contents of literals or comments for expression syntax. String literals,
+// quoted identifiers, dollar-quoted strings and both comment forms
+// (PostgreSQL treats comments as whitespace, and nests /* */) are
+// recognised with the same boundary rules PostgreSQL applies.
+//
+// Prefixed literal forms are refused outright because their parsing is
+// easy to mismatch against the server:
+//
+//   - E'...' escape strings process backslash escapes regardless of
+//     standard_conforming_strings, so a backslash-escaped quote inside
+//     one does not end the literal the way a plain-quote scan believes,
+//     hiding real syntax such as a depth-zero `)` or a non-allowlisted
+//     function call in apparent string content.
+//   - U&'...' and U&"..." unicode escape literals similarly process
+//     backslash (or UESCAPE) escapes.
+//   - B'...' and X'...' bit strings are refused as well: useless in a
+//     subscriber filter, and refusing every prefixed literal keeps one
+//     simple rule (an identifier directly abutting a quote is rejected).
+//
+// Plain '...' literals are scanned honoring only doubled-quote escapes,
+// which matches PostgreSQL exactly under standard_conforming_strings=on;
+// every transaction that parses or runs a sanitized expression pins that
+// setting with SET LOCAL (see beginSubQueryTx and validateQueryTables), so
+// the scan and the database never disagree about backslashes. Unterminated
+// strings, quoted identifiers and dollar-quoted strings fail closed: they
+// are never valid SQL, so refusing them loses nothing and they can never
+// be used to make this scanner skip a different span than the database.
+func lexSQLExp(q string) ([]sqlExpToken, error) {
+	toks := make([]sqlExpToken, 0, len(q)/4+1)
 	for i := 0; i < len(q); {
 		c := q[i]
 		switch {
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f':
+			i++
 		case c == '-' && i+1 < len(q) && q[i+1] == '-':
-			// Line comment: skip its contents.
+			// Line comment: skip its contents. sanitizeSQLExp rejects
+			// comments outright; skipping here is defence in depth so the
+			// token stream can never hide syntax in comments either.
 			for i < len(q) && q[i] != '\n' {
 				i++
 			}
 		case c == '/' && i+1 < len(q) && q[i+1] == '*':
 			// Block comment (PostgreSQL allows nesting): skip its contents.
-			cdepth := 1
+			depth := 1
 			i += 2
-			for i < len(q) && cdepth > 0 {
+			for i < len(q) && depth > 0 {
 				switch {
 				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
-					cdepth++
+					depth++
 					i += 2
 				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
-					cdepth--
+					depth--
 					i += 2
 				default:
 					i++
 				}
 			}
 		case c == '\'':
-			// String literal: skip, honouring '' escapes.
-			i++
-			for i < len(q) {
-				if q[i] == '\'' {
-					if i+1 < len(q) && q[i+1] == '\'' {
-						i += 2
-						continue
-					}
-					i++
-					break
-				}
-				i++
-			}
-		case c == '"':
-			// Quoted identifier: skip, honouring "" escapes.
-			i++
-			for i < len(q) {
-				if q[i] == '"' {
-					if i+1 < len(q) && q[i+1] == '"' {
-						i += 2
-						continue
-					}
-					i++
-					break
-				}
-				i++
-			}
-		case c == '$':
-			// Dollar-quoted string $tag$...$tag$: skip if well-formed.
+			// String literal: skip, honouring '' escapes (the only escape
+			// under standard_conforming_strings=on, which the execution
+			// transactions pin). Fail closed when unterminated.
 			j := i + 1
-			for j < len(q) && (q[j] == '_' || (q[j] >= '0' && q[j] <= '9') ||
-				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
+			closed := false
+			for j < len(q) {
+				if q[j] == '\'' {
+					if j+1 < len(q) && q[j+1] == '\'' {
+						j += 2
+						continue
+					}
+					j++
+					closed = true
+					break
+				}
 				j++
 			}
-			if j < len(q) && q[j] == '$' {
-				tag := q[i : j+1]
-				if end := strings.Index(q[j+1:], tag); end >= 0 {
-					i = j + 1 + end + len(tag)
-					continue
-				}
-				// Unterminated: the DB rejects it; stop scanning here.
-				i = len(q)
-			} else {
-				i++
+			if !closed {
+				return nil, fmt.Errorf("unsafe SQL expression: unterminated string literal")
 			}
+			toks = append(toks, sqlExpToken{kind: sqlTokString})
+			i = j
+		case c == '"':
+			// Quoted identifier: skip, honouring "" escapes, keeping the
+			// decoded name because it can itself name a function
+			// ("pg_sleep"(1)). PostgreSQL processes no backslash escapes in
+			// quoted identifiers.
+			j := i + 1
+			var sb strings.Builder
+			closed := false
+			for j < len(q) {
+				if q[j] == '"' {
+					if j+1 < len(q) && q[j+1] == '"' {
+						sb.WriteByte('"')
+						j += 2
+						continue
+					}
+					j++
+					closed = true
+					break
+				}
+				sb.WriteByte(q[j])
+				j++
+			}
+			if !closed {
+				return nil, fmt.Errorf("unsafe SQL expression: unterminated quoted identifier")
+			}
+			toks = append(toks, sqlExpToken{kind: sqlTokQuotedIdent, name: strings.ToLower(sb.String())})
+			i = j
+		case c == '$':
+			// Dollar-quoted string $tag$...$tag$. The tag follows
+			// PostgreSQL's unquoted-identifier rules minus '$': it may be
+			// empty ($$...$$) but cannot start with a digit ($1 is a
+			// parameter reference, not the start of a tag).
+			j := i + 1
+			tagOK := false
+			if j < len(q) && q[j] == '$' {
+				// Empty tag.
+				tagOK = true
+			} else if j < len(q) && (q[j] == '_' || (q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
+				for j < len(q) && isSQLIdentChar(q[j]) && q[j] != '$' {
+					j++
+				}
+				tagOK = j < len(q) && q[j] == '$'
+			}
+			if tagOK {
+				tag := q[i : j+1]
+				end := strings.Index(q[j+1:], tag)
+				if end < 0 {
+					// Fail closed (never valid SQL anyway).
+					return nil, fmt.Errorf("unsafe SQL expression: unterminated dollar-quoted string")
+				}
+				toks = append(toks, sqlExpToken{kind: sqlTokString})
+				i = j + 1 + end + len(tag)
+				continue
+			}
+			toks = append(toks, sqlExpToken{kind: sqlTokOther})
+			i++
+		case isSQLIdentStart(c):
+			j := i + 1
+			for j < len(q) && isSQLIdentChar(q[j]) {
+				j++
+			}
+			lower := strings.ToLower(q[i:j])
+			// Literal prefixes whose escape rules diverge from a
+			// plain-quote scan (see the function comment). PostgreSQL
+			// requires the prefix directly adjacent to the quote, and so
+			// does this check.
+			if lower == "e" && j < len(q) && q[j] == '\'' {
+				return nil, fmt.Errorf("unsafe SQL expression: escape string literals (E'...') are not allowed")
+			}
+			if lower == "u" && j+1 < len(q) && q[j] == '&' && (q[j+1] == '\'' || q[j+1] == '"') {
+				return nil, fmt.Errorf("unsafe SQL expression: unicode escape literals (U&'...') are not allowed")
+			}
+			if (lower == "b" || lower == "x") && j < len(q) && q[j] == '\'' {
+				return nil, fmt.Errorf("unsafe SQL expression: bit string literals (B'...' / X'...') are not allowed")
+			}
+			toks = append(toks, sqlExpToken{kind: sqlTokIdent, name: lower})
+			i = j
 		case c == '(':
-			depth++
+			toks = append(toks, sqlExpToken{kind: sqlTokLParen})
 			i++
 		case c == ')':
+			toks = append(toks, sqlExpToken{kind: sqlTokRParen})
+			i++
+		default:
+			toks = append(toks, sqlExpToken{kind: sqlTokOther})
+			i++
+		}
+	}
+	return toks, nil
+}
+
+// validateSQLExpParens ensures the expression's parentheses are balanced
+// and that it never closes a parenthesis it did not open. Filter expressions
+// are interpolated textually into `AND (%query%)` positions; a `)` at depth
+// zero would close that surrounding group (eg `FALSE) OR (TRUE`), turning
+// the ANDed conditions that enforce permitted-list scoping into no-ops.
+func validateSQLExpParens(q string) error {
+	toks, err := lexSQLExp(q)
+	if err != nil {
+		return err
+	}
+	depth := 0
+	for _, t := range toks {
+		switch t.kind {
+		case sqlTokLParen:
+			depth++
+		case sqlTokRParen:
 			if depth == 0 {
 				return fmt.Errorf("unsafe SQL expression: unbalanced parenthesis")
 			}
 			depth--
-			i++
-		default:
-			i++
 		}
 	}
 	if depth != 0 {
@@ -380,142 +518,23 @@ func validateSQLExpParens(q string) error {
 	return nil
 }
 
-// validateSQLExpFunctions scans a filter expression with a small lexer that
-// skips string literals, quoted identifiers and dollar-quoted strings, and
-// rejects any remaining identifier followed by "(" whose (final, lowercased)
-// component is not in allowedSQLExpFuncs.
-// skipSQLSpace returns the index of the next character at or after i that is
-// neither whitespace nor a comment. PostgreSQL treats comments as whitespace
-// everywhere (including between a function name and its parenthesis), and
-// supports nested /* */ comments, so both -- and nested /* */ forms must be
-// skipped to keep the allowlist from being bypassed with name/**/(args).
-// An unterminated comment consumes the rest of the string; the DB then
-// rejects the expression, which is fail-safe.
-func skipSQLSpace(q string, i int) int {
-	for i < len(q) {
-		switch {
-		case q[i] == ' ' || q[i] == '\t' || q[i] == '\n' || q[i] == '\r' || q[i] == '\v' || q[i] == '\f':
-			i++
-		case i+1 < len(q) && q[i] == '-' && q[i+1] == '-':
-			for i < len(q) && q[i] != '\n' {
-				i++
-			}
-		case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
-			depth := 1
-			i += 2
-			for i < len(q) && depth > 0 {
-				switch {
-				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
-					depth++
-					i += 2
-				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
-					depth--
-					i += 2
-				default:
-					i++
-				}
-			}
-		default:
-			return i
-		}
-	}
-	return i
-}
-
+// validateSQLExpFunctions rejects any identifier or quoted identifier
+// directly followed by "(" (comments and whitespace are transparent, as
+// they are to PostgreSQL) whose lowercased name is not in
+// allowedSQLExpFuncs.
 func validateSQLExpFunctions(q string) error {
-	for i := 0; i < len(q); {
-		c := q[i]
-		switch {
-		case c == '-' && i+1 < len(q) && q[i+1] == '-':
-			// Line comment: skip its contents.
-			for i < len(q) && q[i] != '\n' {
-				i++
+	toks, err := lexSQLExp(q)
+	if err != nil {
+		return err
+	}
+	for i, t := range toks {
+		if t.kind != sqlTokIdent && t.kind != sqlTokQuotedIdent {
+			continue
+		}
+		if i+1 < len(toks) && toks[i+1].kind == sqlTokLParen {
+			if _, ok := allowedSQLExpFuncs[t.name]; !ok {
+				return fmt.Errorf("unsafe SQL expression: function %q is not allowed", t.name)
 			}
-		case c == '/' && i+1 < len(q) && q[i+1] == '*':
-			// Block comment (PostgreSQL allows nesting): skip its contents.
-			depth := 1
-			i += 2
-			for i < len(q) && depth > 0 {
-				switch {
-				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
-					depth++
-					i += 2
-				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
-					depth--
-					i += 2
-				default:
-					i++
-				}
-			}
-		case c == '\'':
-			// String literal: skip, honouring '' escapes.
-			i++
-			for i < len(q) {
-				if q[i] == '\'' {
-					if i+1 < len(q) && q[i+1] == '\'' {
-						i += 2
-						continue
-					}
-					i++
-					break
-				}
-				i++
-			}
-		case c == '"':
-			// Quoted identifier: it can itself name a function ("pg_sleep"(1)).
-			j := i + 1
-			for j < len(q) {
-				if q[j] == '"' {
-					if j+1 < len(q) && q[j+1] == '"' {
-						j += 2
-						continue
-					}
-					break
-				}
-				j++
-			}
-			name := strings.ToLower(strings.ReplaceAll(q[i+1:min(j, len(q))], `""`, `"`))
-			k := skipSQLSpace(q, j+1)
-			if k < len(q) && q[k] == '(' {
-				if _, ok := allowedSQLExpFuncs[name]; !ok {
-					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
-				}
-			}
-			i = j + 1
-		case c == '$':
-			// Dollar-quoted string $tag$...$tag$: skip if well-formed.
-			j := i + 1
-			for j < len(q) && (q[j] == '_' || (q[j] >= '0' && q[j] <= '9') ||
-				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
-				j++
-			}
-			if j < len(q) && q[j] == '$' {
-				tag := q[i : j+1]
-				if end := strings.Index(q[j+1:], tag); end >= 0 {
-					i = j + 1 + end + len(tag)
-				} else {
-					// Unterminated: let the DB reject it; stop scanning here.
-					return nil
-				}
-			} else {
-				i++
-			}
-		case c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
-			j := i + 1
-			for j < len(q) && (q[j] == '_' || q[j] == '$' || (q[j] >= '0' && q[j] <= '9') ||
-				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
-				j++
-			}
-			name := strings.ToLower(q[i:j])
-			k := skipSQLSpace(q, j)
-			if k < len(q) && q[k] == '(' {
-				if _, ok := allowedSQLExpFuncs[name]; !ok {
-					return fmt.Errorf("unsafe SQL expression: function %q is not allowed", name)
-				}
-			}
-			i = j
-		default:
-			i++
 		}
 	}
 	return nil
