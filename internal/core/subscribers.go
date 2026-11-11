@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -578,13 +579,12 @@ func (c *Core) BlocklistSubscribers(subIDs []int) error {
 
 // BlocklistSubscribersByQuery blocklists the given list of subscribers.
 func (c *Core) BlocklistSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	sanitized, err := sanitizeSQLExp(queryExp)
-	if err != nil {
-		c.log.Printf("error sanitizing blocklist query: %v", err)
-		return echo.NewHTTPError(http.StatusBadRequest,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
-	}
-	if err := c.execSubQueryTpl(searchStr, sanitized, c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+	// execSubQueryTpl sanitizes the expression centrally.
+	if err := c.execSubQueryTpl(searchStr, queryExp, c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error blocklisting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("subscribers.errorBlocklisting", "error", pqErrMsg(err)))
@@ -613,20 +613,18 @@ func (c *Core) DeleteSubscribers(subIDs []int, subUUIDs []string) error {
 
 // DeleteSubscribersByQuery deletes subscribers by a given arbitrary query expression.
 func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	sanitized, err := sanitizeSQLExp(queryExp)
-	if err != nil {
-		c.log.Printf("error sanitizing delete query: %v", err)
-		return echo.NewHTTPError(http.StatusBadRequest,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
-	}
-	err = c.execSubQueryTpl(searchStr, sanitized, c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus)
-	if err != nil {
+	// execSubQueryTpl sanitizes the expression centrally.
+	if err := c.execSubQueryTpl(searchStr, queryExp, c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error deleting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
 	}
 
-	return err
+	return nil
 }
 
 // UnsubscribeByCampaign unsubscribes a given subscriber from lists in a given campaign.
@@ -862,7 +860,20 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 // query template that depends on the filter (eg: delete by query, blocklist by query etc.)
 // combines and executes them.
 func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, subStatus, subscriberStatus string, args ...any) error {
-	queryExp, subStatus = models.ApplyOrphanFilter(queryExp, subStatus)
+	// Sanitize the arbitrary filter centrally, before the orphan filter wraps
+	// it, so every by-query action (delete, blocklist, add/remove/unsubscribe
+	// subscriptions) gets the sanitization compileSubscriberQueryTpl applied
+	// before it. Without this, a list-restricted subscribers:sql_query user
+	// could break out of the final WHERE condition (eg: `TRUE) OR TRUE --`)
+	// and act on subscribers outside their permitted source lists.
+	sanitized, err := sanitizeSQLExp(queryExp)
+	if err != nil {
+		c.log.Printf("error sanitizing subscriber bulk-action query: %v", err)
+		return echo.NewHTTPError(http.StatusBadRequest,
+			c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
+	}
+
+	queryExp, subStatus = models.ApplyOrphanFilter(sanitized, subStatus)
 
 	if len(listIDs) == 0 {
 		listIDs = []int{}

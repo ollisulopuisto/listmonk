@@ -225,6 +225,10 @@ func sanitizeSQLExp(q string) (string, error) {
 		return "", fmt.Errorf("unsafe SQL expression: %q contains a disallowed statement", q)
 	}
 
+	if err := validateSQLExpParens(q); err != nil {
+		return "", err
+	}
+
 	if err := validateSQLExpFunctions(q); err != nil {
 		return "", err
 	}
@@ -276,6 +280,104 @@ var allowedSQLExpFuncs = map[string]struct{}{
 	"varchar": {}, "char": {}, "bpchar": {}, "character": {},
 	"numeric": {}, "decimal": {}, "timestamp": {}, "timestamptz": {},
 	"time": {}, "interval": {}, "bit": {},
+}
+
+// validateSQLExpParens ensures the expression's parentheses are balanced
+// and that it never closes a parenthesis it did not open. Filter expressions
+// are interpolated textually into `AND (%query%)` positions; a `)` at depth
+// zero would close that surrounding group (eg `FALSE) OR (TRUE`), turning
+// the ANDed conditions that enforce permitted-list scoping into no-ops.
+// String literals, quoted identifiers, dollar-quoted strings and comments
+// are skipped with the same lexer rules as validateSQLExpFunctions.
+func validateSQLExpParens(q string) error {
+	depth := 0
+	for i := 0; i < len(q); {
+		c := q[i]
+		switch {
+		case c == '-' && i+1 < len(q) && q[i+1] == '-':
+			// Line comment: skip its contents.
+			for i < len(q) && q[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < len(q) && q[i+1] == '*':
+			// Block comment (PostgreSQL allows nesting): skip its contents.
+			cdepth := 1
+			i += 2
+			for i < len(q) && cdepth > 0 {
+				switch {
+				case i+1 < len(q) && q[i] == '/' && q[i+1] == '*':
+					cdepth++
+					i += 2
+				case i+1 < len(q) && q[i] == '*' && q[i+1] == '/':
+					cdepth--
+					i += 2
+				default:
+					i++
+				}
+			}
+		case c == '\'':
+			// String literal: skip, honouring '' escapes.
+			i++
+			for i < len(q) {
+				if q[i] == '\'' {
+					if i+1 < len(q) && q[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+		case c == '"':
+			// Quoted identifier: skip, honouring "" escapes.
+			i++
+			for i < len(q) {
+				if q[i] == '"' {
+					if i+1 < len(q) && q[i+1] == '"' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+		case c == '$':
+			// Dollar-quoted string $tag$...$tag$: skip if well-formed.
+			j := i + 1
+			for j < len(q) && (q[j] == '_' || (q[j] >= '0' && q[j] <= '9') ||
+				(q[j] >= 'a' && q[j] <= 'z') || (q[j] >= 'A' && q[j] <= 'Z')) {
+				j++
+			}
+			if j < len(q) && q[j] == '$' {
+				tag := q[i : j+1]
+				if end := strings.Index(q[j+1:], tag); end >= 0 {
+					i = j + 1 + end + len(tag)
+					continue
+				}
+				// Unterminated: the DB rejects it; stop scanning here.
+				i = len(q)
+			} else {
+				i++
+			}
+		case c == '(':
+			depth++
+			i++
+		case c == ')':
+			if depth == 0 {
+				return fmt.Errorf("unsafe SQL expression: unbalanced parenthesis")
+			}
+			depth--
+			i++
+		default:
+			i++
+		}
+	}
+	if depth != 0 {
+		return fmt.Errorf("unsafe SQL expression: unbalanced parenthesis")
+	}
+	return nil
 }
 
 // validateSQLExpFunctions scans a filter expression with a small lexer that

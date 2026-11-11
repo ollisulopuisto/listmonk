@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -42,6 +43,10 @@ func (c *Core) AddSubscriptionsByQuery(searchStr, queryExp string, sourceListIDs
 
 	err := c.execSubQueryTpl(searchStr, queryExp, c.q.AddSubscribersToListsByQuery, sourceListIDs, subStatus, subscriberStatus, pq.Array(targetListIDs), status)
 	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error adding subscriptions by query: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -71,6 +76,10 @@ func (c *Core) DeleteSubscriptionsByQuery(searchStr, queryExp string, sourceList
 
 	err := c.execSubQueryTpl(searchStr, queryExp, c.q.DeleteSubscriptionsByQuery, sourceListIDs, subStatus, subscriberStatus, pq.Array(targetListIDs))
 	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error deleting subscriptions by query: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
@@ -99,6 +108,10 @@ func (c *Core) UnsubscribeListsByQuery(searchStr, queryExp string, sourceListIDs
 
 	err := c.execSubQueryTpl(searchStr, queryExp, c.q.UnsubscribeSubscribersFromListsByQuery, sourceListIDs, subStatus, subscriberStatus, pq.Array(targetListIDs))
 	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error unsubscribing from lists by query: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))

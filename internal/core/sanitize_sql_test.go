@@ -29,6 +29,13 @@ func TestSanitizeSQLExpRejectsInjection(t *testing.T) {
 		"nextval('x')",
 		"1 AND pg_sleep(5)",
 		"name = 'x'; DROP TABLE subscribers",
+		// Parenthesis breakouts: a `)` at depth zero closes the surrounding
+		// AND group and turns permitted-list scoping into a no-op.
+		"FALSE) OR (TRUE",
+		"TRUE)) IS TRUE OR ((TRUE",
+		"(TRUE",
+		"TRUE(",
+		"name = 'a') OR ('1'='1",
 	}
 	for _, q := range reject {
 		if _, err := sanitizeSQLExp(q); err == nil {
@@ -46,6 +53,10 @@ func TestSanitizeSQLExpRejectsInjection(t *testing.T) {
 		"created_at > now() - interval '7 days'",
 		"coalesce(name, '') <> ''",
 		"name ILIKE '%foo%'",
+		// Balanced nesting and parens inside string literals are fine.
+		"(name = 'a' OR name = 'b') AND email LIKE '%(x)%'",
+		"lower(email) IN (SELECT lower('a@example.com'))",
+		"email LIKE '%''quoted''%'",
 	}
 	for _, q := range accept {
 		if _, err := sanitizeSQLExp(q); err != nil {

@@ -123,8 +123,10 @@ func mediaTags(t *testing.T, c *Core, id int) []string {
 // unrestricted (all lists) caller is not limited.
 func TestUpdateMediaListScopePG(t *testing.T) {
 	c := &Core{db: pgTestDB(t).Unsafe()}
-	c.q = prepareMediaQueries(t, c.db)
+	// Seed before preparing: PREPARE resolves relations, so the media table
+	// must exist first.
 	ownID, otherID, publicID := seedMedia(t, c)
+	c.q = prepareMediaQueries(t, c.db)
 	store := fakeMediaStore{}
 
 	// Allowed: own list's item updates and returns the new tags.
