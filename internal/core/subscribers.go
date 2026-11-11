@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -38,8 +39,16 @@ func (c *Core) beginSubQueryTx(readOnly bool) (*sqlx.Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The value is a compile-time constant; SET does not accept bind params.
+	// The values are compile-time constants; SET does not accept bind params.
 	if _, err := tx.Exec("SET LOCAL statement_timeout = '" + subQueryStatementTimeout + "'"); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	// sanitizeSQLExp scans string literals honouring only doubled '' escapes,
+	// which matches PostgreSQL only under standard_conforming_strings=on.
+	// Pin it so the sanitizer and the database can never disagree about
+	// backslash escapes, whatever the server or role default is.
+	if _, err := tx.Exec("SET LOCAL standard_conforming_strings = on"); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -578,13 +587,12 @@ func (c *Core) BlocklistSubscribers(subIDs []int) error {
 
 // BlocklistSubscribersByQuery blocklists the given list of subscribers.
 func (c *Core) BlocklistSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	sanitized, err := sanitizeSQLExp(queryExp)
-	if err != nil {
-		c.log.Printf("error sanitizing blocklist query: %v", err)
-		return echo.NewHTTPError(http.StatusBadRequest,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
-	}
-	if err := c.execSubQueryTpl(searchStr, sanitized, c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+	// execSubQueryTpl sanitizes the expression centrally.
+	if err := c.execSubQueryTpl(searchStr, queryExp, c.q.BlocklistSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error blocklisting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("subscribers.errorBlocklisting", "error", pqErrMsg(err)))
@@ -613,20 +621,18 @@ func (c *Core) DeleteSubscribers(subIDs []int, subUUIDs []string) error {
 
 // DeleteSubscribersByQuery deletes subscribers by a given arbitrary query expression.
 func (c *Core) DeleteSubscribersByQuery(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) error {
-	sanitized, err := sanitizeSQLExp(queryExp)
-	if err != nil {
-		c.log.Printf("error sanitizing delete query: %v", err)
-		return echo.NewHTTPError(http.StatusBadRequest,
-			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", err.Error()))
-	}
-	err = c.execSubQueryTpl(searchStr, sanitized, c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus)
-	if err != nil {
+	// execSubQueryTpl sanitizes the expression centrally.
+	if err := c.execSubQueryTpl(searchStr, queryExp, c.q.DeleteSubscribersByQuery, listIDs, subStatus, subscriberStatus); err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) {
+			return he
+		}
 		c.log.Printf("error deleting subscribers: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorDeleting", "name", "{globals.terms.subscribers}", "error", pqErrMsg(err)))
 	}
 
-	return err
+	return nil
 }
 
 // UnsubscribeByCampaign unsubscribes a given subscriber from lists in a given campaign.
@@ -752,6 +758,13 @@ func validateQueryTables(db *sqlx.DB, query string, allowedTables map[string]str
 	}
 	defer tx.Rollback()
 
+	// Parse the statement under the same pinned string-literal semantics the
+	// sanitizer and the execution transactions use (see beginSubQueryTx), so
+	// the allowlist check sees the same statement the database would run.
+	if _, err := tx.Exec("SET LOCAL standard_conforming_strings = on"); err != nil {
+		return err
+	}
+
 	var plan string
 	// codeql[go/sql-injection]
 	// `query` is an interpolated subscriber filter expression that has already passed
@@ -820,80 +833,78 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 	}
 }
 
-// compileSubscriberQueryTpl takes an arbitrary WHERE expressions
-// to filter subscribers from the subscribers table and prepares a query
-// using the raw `query-subscribers-template` template. It sanitizes the
-// query by dry-running it as a read only query.
-func (c *Core) compileSubscriberQueryTpl(searchStr, queryExp string, subStatus, subscriberStatus string) (string, error) {
-	// Sanitize the arbitrary query condition before it is interpolated into
-	// the SQL statement, defending against SQL injection.
-	if queryExp != "" {
-		sanitized, err := sanitizeSQLExp(queryExp)
-		if err != nil {
-			return "", err
-		}
-		queryExp = sanitized
-	}
-
+// querySubscriberIDs resolves an arbitrary WHERE expression to subscriber IDs
+// inside a read-only transaction. Only these IDs may be used in a writable query.
+func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, subStatus, subscriberStatus string) ([]int, error) {
 	// There's an arbitrary query condition.
 	cond := "TRUE"
 	if queryExp != "" {
 		cond = queryExp
 	}
 
-	// Validate before executing the dry run.
-	// The query expression is intentionally raw SQL, as documented in
-	// docs/docs/content/security-reports.md; it is sanitized and dry-run read-only.
-	// codeql[go/sql-injection]
+	// Validate the same query and arguments used to select the IDs.
 	stmt := strings.ReplaceAll(c.q.QuerySubscribersTpl, "%query%", cond)
-	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
-		return "", err
+	args := []any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}
+	if err := validateQueryTables(c.db, stmt, allowedSubQueryTables, args...); err != nil {
+		return nil, err
 	}
 
 	tx, err := c.beginSubQueryTx(true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	// Perform the dry run.
+	var ids []int
+	// `stmt` embeds a subscriber filter expression that callers have already
+	// passed through sanitizeSQLExp (rejects multi-statement input, SQL
+	// comments and DDL/DML keywords), its tables are allowlisted by
+	// validateQueryTables above, and it runs here read-only with a statement
+	// timeout; only the resulting integer IDs are bound into writable
+	// statements. Intentional permission-gated subscribers:sql_query feature;
+	// CodeQL cannot model the combined defences.
 	// codeql[go/sql-injection]
-	// `stmt` embeds a subscriber filter expression that has already passed sanitizeSQLExp
-	// (rejects multi-statement input, SQL comments and DDL/DML keywords) and runs here in
-	// a read-only transaction with a statement timeout as a read-only dry run; its tables
-	// are allowlisted by validateQueryTables. Intentional permission-gated
-	// subscribers:sql_query feature; CodeQL cannot model the combined defences.
-	if _, err := tx.Exec(stmt, true, pq.Int64Array{}, subStatus, searchStr, subscriberStatus); err != nil {
-		return "", err
+	if err := tx.Select(&ids, stmt, args...); err != nil {
+		return nil, err
 	}
 
-	return stmt, nil
+	return ids, nil
 }
 
 // execSubQueryTpl takes an arbitrary WHERE expressions and a subscriber
 // query template that depends on the filter (eg: delete by query, blocklist by query etc.)
 // combines and executes them.
 func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, subStatus, subscriberStatus string, args ...any) error {
-	queryExp, subStatus = models.ApplyOrphanFilter(queryExp, subStatus)
-
-	// Perform a dry run.
-	filterExp, err := c.compileSubscriberQueryTpl(searchStr, queryExp, subStatus, subscriberStatus)
+	// Sanitize the arbitrary filter centrally, before the orphan filter wraps
+	// it, so every by-query action (delete, blocklist, add/remove/unsubscribe
+	// subscriptions) gets the sanitization compileSubscriberQueryTpl applied
+	// before it. Without this, a list-restricted subscribers:sql_query user
+	// could break out of the final WHERE condition (eg: `TRUE) OR TRUE --`)
+	// and act on subscribers outside their permitted source lists.
+	sanitized, err := sanitizeSQLExp(queryExp)
 	if err != nil {
-		return err
+		c.log.Printf("error sanitizing subscriber bulk-action query: %v", err)
+		return echo.NewHTTPError(http.StatusBadRequest,
+			c.i18n.Ts("subscribers.errorPreparingQuery", "error", err.Error()))
 	}
+
+	queryExp, subStatus = models.ApplyOrphanFilter(sanitized, subStatus)
 
 	if len(listIDs) == 0 {
 		listIDs = []int{}
 	}
 
-	// Insert the subscriber filter query into the target query.
-	// filterExp is produced by compileSubscriberQueryTpl after sanitization and
-	// a read-only dry run. This preserves the documented SQL query feature.
-	// codeql[go/sql-injection]
-	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", filterExp)
+	ids, err := c.querySubscriberIDs(searchStr, queryExp, listIDs, subStatus, subscriberStatus)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
 
-	// First argument is the boolean indicating if the query is a dry run.
-	a := append([]any{false, pq.Array(listIDs), subStatus, searchStr, subscriberStatus}, args...)
+	// Never interpolate the user expression into a writable statement.
+	stmt := strings.ReplaceAll(baseQueryTpl, "%query%", "SELECT UNNEST($1::INT[]) AS id")
+	a := append([]any{pq.Array(ids)}, args...)
 
 	// Execute the query on the DB in a bounded transaction.
 	tx, err := c.beginSubQueryTx(false)
@@ -903,12 +914,9 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	defer tx.Rollback()
 
 	// codeql[go/sql-injection]
-	// `stmt` embeds a subscriber filter expression produced by compileSubscriberQueryTpl
-	// after sanitizeSQLExp and a read-only dry run, so it has already been validated:
-	// sanitizeSQLExp rejects multi-statement input, SQL comments and DDL/DML keywords,
-	// the transaction is read-only with a statement timeout, and its tables are allowlisted
-	// by validateQueryTables. Intentional permission-gated subscribers:sql_query feature;
-	// CodeQL cannot model the combined defences.
+	// `stmt` embeds no user expression: the arbitrary filter ran separately in
+	// querySubscriberIDs (table-allowlisted, read-only, statement timeout) and
+	// only the resulting integer IDs are bound here as a parameter array.
 	if _, err := tx.Exec(stmt, a...); err != nil {
 		return err
 	}

@@ -1,17 +1,58 @@
 import Chart from 'chart.js/auto';
+import { niceDate } from './utils.js';
 
 const FONT_FAMILY = "'Geist', sans-serif";
 
-// Format an ISO date ('2024-06-01') to a short 'DD Mon' label.
-function label(iso) {
-  // Parse date-only buckets as local dates so western timezones do not show
-  // the previous day.
-  const d = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(d.getTime())) {
-    return iso;
-  }
+// Resolve theme variables to a concrete color for canvas rendering.
+export function chartThemeColor(name) {
+  const el = document.createElement('div');
+  el.style.color = `var(--${name})`;
+  document.documentElement.appendChild(el);
+  const color = getComputedStyle(el).color;
+  el.remove();
+  return color;
+}
 
-  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+// Format date-only buckets retaining the DB's date.
+export function chartDate(iso, interval = 'day') {
+  return niceDate(interval === 'hour' ? iso : `${iso.slice(0, 10)}T00:00:00`) || iso;
+}
+
+// Render the timestamp as a separate heading above labels.
+export function lineTooltip(timestamp = (item) => item.label, interval = 'day') {
+  return {
+    backgroundColor: chartThemeColor('card'),
+    borderColor: chartThemeColor('border'),
+    borderWidth: 1,
+    cornerRadius: 8,
+    padding: 12,
+    titleColor: chartThemeColor('foreground'),
+    titleFont: { family: FONT_FAMILY, size: 12, weight: '500' },
+    titleMarginBottom: 12,
+    bodyColor: chartThemeColor('muted-foreground'),
+    bodyFont: { family: FONT_FAMILY, size: 13 },
+    bodySpacing: 8,
+    boxWidth: 10,
+    boxHeight: 4,
+    boxPadding: 6,
+
+    callbacks: {
+      title: (items) => {
+        if (!items.length) return '';
+        const iso = timestamp(items[0]);
+        const heading = chartDate(iso, interval);
+        if (interval !== 'hour') return heading;
+
+        const date = new Date(iso);
+        return `${heading} · ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZoneName: 'short' })}`;
+      },
+      label: (item) => `${item.dataset.label}:  ${item.formattedValue}`,
+      labelColor: (item) => ({
+        backgroundColor: item.dataset.borderColor,
+        borderColor: 'transparent',
+      }),
+    },
+  };
 }
 
 // Draw {count, date} rows, optionally adding a dashed comparison series.
@@ -31,11 +72,7 @@ export function lineChart(id, rows, comparison) {
   }
 
   // Get the primary colour.
-  const el = document.createElement('div');
-  el.style.color = 'var(--primary)';
-  document.documentElement.appendChild(el);
-  const color = getComputedStyle(el).color || '#0055d4';
-  el.remove();
+  const color = chartThemeColor('primary') || '#0055d4';
 
   Chart.defaults.font.family = FONT_FAMILY;
 
@@ -64,13 +101,21 @@ export function lineChart(id, rows, comparison) {
   // eslint-disable-next-line no-new
   new Chart(canvas, {
     type: 'line',
-    data: { labels: data.map((d) => label(d.date)), datasets },
+    data: { labels: data.map((d) => chartDate(d.date)), datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: !!comparison } },
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: !!comparison },
+        tooltip: lineTooltip((item) => data[item.dataIndex].date),
+      },
       scales: {
-        x: { grid: { display: false }, border: { display: false } },
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { font: { size: 10 }, color: chartThemeColor('muted-foreground') },
+        },
         y: { grid: { display: false }, border: { display: false }, ticks: { precision: 0 } },
       },
     },

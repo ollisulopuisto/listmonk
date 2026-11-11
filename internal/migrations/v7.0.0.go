@@ -55,6 +55,13 @@ func V7_0_0(db *sqlx.DB, fs stuffbin.FileSystem, ko *koanf.Koanf, lo *log.Logger
             WHERE NOT (v ? 'exclude_from_default')
         );
 
+        -- Preserve the existing OIDC redirect URL.
+        UPDATE settings SET value = JSONB_SET(value, '{redirect_url}', (
+            SELECT TO_JSONB(RTRIM(value#>>'{}', '/') || '/auth/oidc')
+            FROM settings WHERE key = 'app.root_url'
+        ))
+        WHERE key = 'security.oidc' AND NOT (value ? 'redirect_url');
+
         -- OIDC RP-initiated logout option.
         UPDATE settings SET value = JSONB_SET(value, '{logout}', 'false'::JSONB)
         WHERE key = 'security.oidc' AND NOT (value ? 'logout');
@@ -63,9 +70,21 @@ func V7_0_0(db *sqlx.DB, fs stuffbin.FileSystem, ko *koanf.Koanf, lo *log.Logger
         UPDATE settings SET value = JSONB_SET(value, '{verify_email}', 'false'::JSONB)
         WHERE key = 'security.oidc' AND NOT (value ? 'verify_email');
 
+        -- OIDC role sync on login.
+        UPDATE settings SET value = JSONB_SET(value, '{auto_sync_roles}', 'false'::JSONB)
+        WHERE key = 'security.oidc' AND NOT (value ? 'auto_sync_roles');
+
         -- OIDC claim mapping.
         UPDATE settings SET value = JSONB_SET(value, '{roles}', '[]'::JSONB)
         WHERE key = 'security.oidc' AND NOT (value ? 'roles');
+	`); err != nil {
+		return err
+	}
+
+	// Media tags field.
+	if _, err := db.Exec(`
+        ALTER TABLE media ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+        CREATE INDEX IF NOT EXISTS idx_media_tags ON media USING GIN(tags);
 	`); err != nil {
 		return err
 	}

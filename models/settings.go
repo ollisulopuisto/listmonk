@@ -68,10 +68,12 @@ type Settings struct {
 		Logout            bool              `json:"logout"`
 		VerifyEmail       bool              `json:"verify_email"`
 		ProviderURL       string            `json:"provider_url"`
+		RedirectURL       string            `json:"redirect_url"`
 		ProviderName      string            `json:"provider_name"`
 		ClientID          string            `json:"client_id"`
 		ClientSecret      string            `json:"client_secret"`
 		AutoCreateUsers   bool              `json:"auto_create_users"`
+		AutoSyncRoles     bool              `json:"auto_sync_roles"`
 		DefaultUserRoleID null.Int          `json:"default_user_role_id"`
 		DefaultListRoleID null.Int          `json:"default_list_role_id"`
 		Roles             []OIDCRoleMapping `json:"roles"`

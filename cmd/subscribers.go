@@ -905,12 +905,10 @@ func (a *App) DeleteSubscribersByQuery(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "query"))
 	}
 
-	// Does the user have the subscribers:sql_query permission?
+	// Arbitrary SQL expressions are not accepted from request input.
 	if req.Query != "" {
-		if !user.HasPerm(auth.PermSubscribersSqlQuery) {
-			return echo.NewHTTPError(http.StatusForbidden,
-				a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
-		}
+		return echo.NewHTTPError(http.StatusBadRequest,
+			a.i18n.T("globals.messages.invalidFields"))
 	}
 
 	// Filter list IDs against the current user's permitted lists.
@@ -940,12 +938,10 @@ func (a *App) BlocklistSubscribersByQuery(c *echo.Context) error {
 	if !req.All && req.Search == "" && req.Query == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "query"))
 	}
-	// Does the user have the subscribers:sql_query permission?
+	// Arbitrary SQL expressions are not accepted from request input.
 	if req.Query != "" {
-		if !user.HasPerm(auth.PermSubscribersSqlQuery) {
-			return echo.NewHTTPError(http.StatusForbidden,
-				a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
-		}
+		return echo.NewHTTPError(http.StatusBadRequest,
+			a.i18n.T("globals.messages.invalidFields"))
 	}
 
 	// Filter list IDs against the current user's permitted lists.
@@ -980,12 +976,10 @@ func (a *App) ManageSubscriberListsByQuery(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "query"))
 	}
 
-	// Does the user have the subscribers:sql_query permission?
+	// Arbitrary SQL expressions are not accepted from request input.
 	if req.Query != "" {
-		if !user.HasPerm(auth.PermSubscribersSqlQuery) {
-			return echo.NewHTTPError(http.StatusForbidden,
-				a.i18n.Ts("globals.messages.permissionDenied", "name", auth.PermSubscribersSqlQuery))
-		}
+		return echo.NewHTTPError(http.StatusBadRequest,
+			a.i18n.T("globals.messages.invalidFields"))
 	}
 
 	// Filter lists against the current user's permitted lists.

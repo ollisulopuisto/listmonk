@@ -26,10 +26,19 @@ var (
 	imageExts  = []string{"gif", "png", "jpg", "jpeg"}
 )
 
+// mediaQueryDefaults is the allow list of filter query params.
+var mediaQueryDefaults = map[string]string{
+	"page":     "",
+	"per_page": "100",
+	"query":    "",
+	"tag":      "",
+}
+
 // mediaView is the admin view for the media gallery page.
 type mediaView struct {
 	adminView
 
+	Tags     []media.Tag
 	Media    []media.Media
 	Provider string
 	Page     models.PageProps
@@ -42,7 +51,13 @@ func (a *App) ViewMedia(c *echo.Context) error {
 		return err
 	}
 
+	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+	if err != nil {
+		return err
+	}
+
 	data := mediaView{
+		Tags:      tags,
 		adminView: newAdminView(c, a.i18n.T("globals.terms.media"), "", "campaigns.media"),
 		Media:     res,
 		Provider:  a.cfg.MediaUpload.Provider,
@@ -59,7 +74,13 @@ func (a *App) ViewMediaFragment(c *echo.Context) error {
 		return err
 	}
 
+	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+	if err != nil {
+		return err
+	}
+
 	data := mediaView{
+		Tags:      tags,
 		adminView: newAdminView(c, a.i18n.T("globals.terms.media"), "", "campaigns.media"),
 		Media:     res,
 		Provider:  a.cfg.MediaUpload.Provider,
@@ -67,13 +88,6 @@ func (a *App) ViewMediaFragment(c *echo.Context) error {
 	}
 
 	return c.Render(http.StatusOK, "admin-media-fragment", data)
-}
-
-// mediaQueryDefaults is the allow list of filter query params.
-var mediaQueryDefaults = map[string]string{
-	"page":     "",
-	"per_page": "100",
-	"query":    "",
 }
 
 // getMediaPrefixes returns the media prefixes permitted for the user.
@@ -103,7 +117,7 @@ func (a *App) getMedia(c *echo.Context) ([]media.Media, models.PageProps, error)
 	prefixes := getMediaPrefixes(auth.GetUser(c))
 
 	pg := a.pg.NewFromURL(q)
-	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), prefixes, pg.Offset, pg.Limit)
+	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), prefixes, q["tag"], pg.Offset, pg.Limit)
 	if err != nil {
 		return nil, models.PageProps{}, err
 	}
@@ -233,7 +247,7 @@ func (a *App) UploadMedia(c *echo.Context) error {
 	}
 
 	// Insert the media into the DB.
-	m, err := a.core.InsertMedia(fName, thumbfName, contentType, meta, a.cfg.MediaUpload.Provider, a.media)
+	m, err := a.core.InsertMedia(fName, thumbfName, contentType, meta, c.Request().MultipartForm.Value["tags"], a.cfg.MediaUpload.Provider, a.media)
 	if err != nil {
 		cleanUp = true
 		return err
@@ -251,7 +265,7 @@ func (a *App) GetAllMedia(c *echo.Context) error {
 	)
 
 	// Fetch the media items from the DB.
-	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, prefixes, pg.Offset, pg.Limit)
+	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, prefixes, c.Request().URL.Query()["tag"], pg.Offset, pg.Limit)
 	if err != nil {
 		return err
 	}
@@ -273,6 +287,34 @@ func (a *App) GetMedia(c *echo.Context) error {
 	// Fetch the media item from the DB.
 	id := getID(c)
 	out, err := a.core.GetMedia(id, "", "", a.media)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, okResp{out})
+}
+
+// GetMediaTags returns media tags and their counts.
+func (a *App) GetMediaTags(c *echo.Context) error {
+	out, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, okResp{out})
+}
+
+// UpdateMedia updates a media item's tags.
+func (a *App) UpdateMedia(c *echo.Context) error {
+	var m struct {
+		Tags []string `json:"tags"`
+	}
+
+	if err := c.Bind(&m); err != nil {
+		return err
+	}
+
+	out, err := a.core.UpdateMedia(getID(c), a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)), m.Tags, a.media)
 	if err != nil {
 		return err
 	}

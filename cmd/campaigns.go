@@ -82,6 +82,7 @@ type campaignView struct {
 	AllLists        []models.List
 	SelectedListIDs []int
 	ArchiveURL      string
+	Analytics       *analyticsData
 }
 
 // ViewNewCampaign renders the new campaign page (only the "campaign" tab).
@@ -191,6 +192,41 @@ func (a *App) ViewCampaign(c *echo.Context) error {
 		Templates:  tpls,
 		AllLists:   allLists,
 		ArchiveURL: archiveURL,
+	}
+
+	// Show the overview with stats/analytics for the last 90 days.
+	if data.Can(auth.PermCampaignsGetAnalytics) {
+		var (
+			now  = time.Now()
+			from = now.AddDate(0, 0, -90).Format(time.RFC3339)
+			ids  = []int{id}
+		)
+
+		// If the campaign is up to 4 weeks old, show daily interval, otherwise weekly.
+		intVal := models.AnalyticsIntervalDay
+		if camp.UpdatedAt.Valid && camp.UpdatedAt.Time.Before(now.AddDate(0, 0, -28)) {
+			intVal = models.AnalyticsIntervalWeek
+		}
+
+		data.Analytics = &analyticsData{
+			Interval: intVal,
+			Items:    []models.AnalyticsItem{{ID: camp.ID, Name: camp.Name, Sent: camp.Sent}},
+		}
+
+		data.Analytics.Views, err = a.core.GetCampaignAnalyticsCounts(ids, models.AnalyticsTypeTotalViews, from, now.Format(time.RFC3339), intVal)
+		if err != nil {
+			return err
+		}
+
+		data.Analytics.Clicks, err = a.core.GetCampaignAnalyticsCounts(ids, models.AnalyticsTypeTotalClicks, from, now.Format(time.RFC3339), intVal)
+		if err != nil {
+			return err
+		}
+
+		data.Analytics.Links, err = a.core.GetCampaignAnalyticsLinks(ids, from, now.Format(time.RFC3339))
+		if err != nil {
+			return err
+		}
 	}
 
 	return c.Render(http.StatusOK, "admin-campaign", data)

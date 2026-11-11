@@ -315,6 +315,22 @@ func (a *App) OIDCFinish(c *echo.Context) error {
 		return a.renderLoginPage(c, echo.NewHTTPError(http.StatusForbidden, a.i18n.T("users.invalidLogin")))
 	}
 
+	// Sync the roles from claims.
+	if a.cfg.Security.OIDC.AutoSyncRoles {
+		userRoleID, listRoleID := resolveOIDCRoles(claims.RawClaims, a.cfg.Security.OIDC.Roles, a.cfg.Security.OIDC.DefaultUserRoleID, a.cfg.Security.OIDC.DefaultListRoleID)
+		user.UserRoleID = userRoleID
+		user.ListRoleID = nil
+		if listRoleID > 0 {
+			user.ListRoleID = &listRoleID
+		}
+
+		user.Password = null.String{}
+		user, err = a.core.UpdateUser(user.ID, user)
+		if err != nil {
+			return a.renderLoginPage(c, err)
+		}
+	}
+
 	// Update the user login state (avatar, logged in date) in the DB.
 	if err := a.core.UpdateUserLogin(user.ID, claims.Picture); err != nil {
 		return a.renderLoginPage(c, err)
@@ -349,18 +365,12 @@ func (a *App) ResetPage(c *echo.Context) error {
 	)
 
 	// Validate token and email (don't delete it yet, as we may need it for POST).
-	data, err := tmptokens.Check(email)
-	if err != nil {
-		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
-	}
-
-	tk, ok := data.(string)
-	if !ok || tk != token {
+	if !tmptokens.Match(email, token, false) {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
 
 	// Validate that the user exists.
-	_, err = a.core.GetUser(0, "", email)
+	_, err := a.core.GetUser(0, "", email)
 	if err != nil {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
@@ -679,8 +689,8 @@ func (a *App) doForgotPassword(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, a.i18n.T("globals.messages.internalError"))
 	}
 
-	// Store the reset token in tmptokens.
-	tmptokens.Set(email, passwordResetTTL, token)
+	// Preserve pending reset links and their original expiry on repeat requests.
+	token = tmptokens.SetNX(email, passwordResetTTL, token).(string)
 
 	// Prepare the reset URL.
 	resetURL := fmt.Sprintf("%s/admin/reset?token=%s&email=%s", a.urlCfg.RootURL, token, url.QueryEscape(email))
@@ -732,14 +742,8 @@ func (a *App) doResetPassword(c *echo.Context, token, email string) error {
 		return a.renderResetPasswordPage(c, token, email, a.i18n.T("users.passwordMismatch"))
 	}
 
-	// Validate and consume the token (this deletes it).
-	data, err := tmptokens.Get(email)
-	if err != nil {
-		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
-	}
-
-	tk, ok := data.(string)
-	if !ok || tk != token {
+	// Atomically consume only the matching token.
+	if !tmptokens.Match(email, token, true) {
 		return c.Render(http.StatusBadRequest, tplMessage, makeMsgTpl(a.i18n.T("users.resetPassword"), "", a.i18n.T("users.invalidResetLink")))
 	}
 
@@ -782,6 +786,14 @@ func (a *App) renderTwofaPage(c *echo.Context, token, next, errMsg string) error
 
 // doTwofaVerify handles the 2FA verification form submission.
 func (a *App) doTwofaVerify(c *echo.Context, token string, userID int, next string) error {
+	// Share a budget across all login tokens for this user. Only requests with a
+	// valid password-authenticated token reach here. New logins do not reset it.
+	attemptKey := fmt.Sprintf("twofa-attempts:%d", userID)
+	tmptokens.SetNX(attemptKey, twofaTokenTTL, nil)
+	if _, err := tmptokens.Check(attemptKey); err != nil {
+		return echo.NewHTTPError(http.StatusTooManyRequests, a.i18n.T("globals.messages.invalidValue"))
+	}
+
 	totpCode := strings.TrimSpace(c.FormValue("totp_code"))
 
 	// Validate.
@@ -806,7 +818,7 @@ func (a *App) doTwofaVerify(c *echo.Context, token string, userID int, next stri
 		return a.renderTwofaPage(c, token, next, a.i18n.T("globals.messages.invalidValue"))
 	}
 
-	// Invalidate the token tomically to prevent concurrency/replay.
+	// Invalidate the token atomically to prevent concurrency/replay.
 	if _, err := tmptokens.Get(token); err != nil {
 		return c.Redirect(http.StatusFound, uriAdmin)
 	}
@@ -935,7 +947,7 @@ func validateOIDCRoles(roles []models.OIDCRoleMapping, userRoles []auth.Role, li
 // validateOIDCSettings checks defaults even when automatic user creation is disabled.
 func validateOIDCSettings(set models.Settings, userRoles []auth.Role, listRoles []auth.ListRole) error {
 	o := set.OIDC
-	if o.AutoCreateUsers || o.DefaultUserRoleID.Valid {
+	if o.AutoCreateUsers || o.AutoSyncRoles || o.DefaultUserRoleID.Valid {
 		if !o.DefaultUserRoleID.Valid || !slices.ContainsFunc(userRoles, func(r auth.Role) bool { return r.ID == o.DefaultUserRoleID.Int }) {
 			return fmt.Errorf("OIDC default user role ID %d does not exist", o.DefaultUserRoleID.Int)
 		}
