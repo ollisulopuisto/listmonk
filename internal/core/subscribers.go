@@ -856,6 +856,7 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 	defer tx.Rollback()
 
 	var ids []int
+<<<<<<< HEAD
 	// `stmt` embeds a subscriber filter expression that callers have already
 	// passed through sanitizeSQLExp (rejects multi-statement input, SQL
 	// comments and DDL/DML keywords), its tables are allowlisted by
@@ -864,6 +865,8 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 	// statements. Intentional permission-gated subscribers:sql_query feature;
 	// CodeQL cannot model the combined defences.
 	// codeql[go/sql-injection]
+=======
+>>>>>>> upstream/master
 	if err := tx.Select(&ids, stmt, args...); err != nil {
 		return nil, err
 	}
@@ -875,6 +878,7 @@ func (c *Core) querySubscriberIDs(searchStr, queryExp string, listIDs []int, sub
 // query template that depends on the filter (eg: delete by query, blocklist by query etc.)
 // combines and executes them.
 func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs []int, subStatus, subscriberStatus string, args ...any) error {
+<<<<<<< HEAD
 	// Sanitize the arbitrary filter centrally, before the orphan filter wraps
 	// it, so every by-query action (delete, blocklist, add/remove/unsubscribe
 	// subscriptions) gets the sanitization compileSubscriberQueryTpl applied
@@ -889,6 +893,9 @@ func (c *Core) execSubQueryTpl(searchStr, queryExp, baseQueryTpl string, listIDs
 	}
 
 	queryExp, subStatus = models.ApplyOrphanFilter(sanitized, subStatus)
+=======
+	queryExp, subStatus = models.ApplyOrphanFilter(queryExp, subStatus)
+>>>>>>> upstream/master
 
 	if len(listIDs) == 0 {
 		listIDs = []int{}
