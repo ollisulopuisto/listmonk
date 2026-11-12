@@ -15,11 +15,7 @@ import (
 )
 
 // QueryMedia returns media entries optionally filtered by a query string.
-<<<<<<< HEAD
 func (c *Core) QueryMedia(provider string, s media.Store, query string, prefixes, tags []string, offset, limit int) ([]media.Media, int, error) {
-=======
-func (c *Core) QueryMedia(provider string, s media.Store, query string, tags []string, offset, limit int) ([]media.Media, int, error) {
->>>>>>> upstream/master
 	out := []media.Media{}
 	if tags == nil {
 		tags = []string{}
@@ -29,7 +25,6 @@ func (c *Core) QueryMedia(provider string, s media.Store, query string, tags []s
 		query = strings.ToLower(query)
 	}
 
-<<<<<<< HEAD
 	if prefixes == nil {
 		prefixes = []string{}
 	}
@@ -38,9 +33,6 @@ func (c *Core) QueryMedia(provider string, s media.Store, query string, tags []s
 	}
 
 	if err := c.q.QueryMedia.Select(&out, fmt.Sprintf("%%%s%%", query), provider, offset, limit, pq.StringArray(prefixes), pq.StringArray(tags)); err != nil {
-=======
-	if err := c.q.QueryMedia.Select(&out, fmt.Sprintf("%%%s%%", query), provider, offset, limit, pq.StringArray(tags)); err != nil {
->>>>>>> upstream/master
 		return out, 0, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching",
 				"name", "{globals.terms.media}", "error", pqErrMsg(err)))
@@ -88,7 +80,6 @@ func (c *Core) GetMedia(id int, uuid, fileName string, s media.Store) (media.Med
 	return out, nil
 }
 
-<<<<<<< HEAD
 // GetMediaTags returns tags for the given provider, limited to the media
 // filename prefixes the user is permitted to see (same guard as QueryMedia).
 func (c *Core) GetMediaTags(provider string, prefixes []string) ([]media.Tag, error) {
@@ -97,12 +88,6 @@ func (c *Core) GetMediaTags(provider string, prefixes []string) ([]media.Tag, er
 		prefixes = []string{}
 	}
 	if err := c.q.GetMediaTags.Select(&out, provider, pq.StringArray(prefixes)); err != nil {
-=======
-// GetMediaTags returns tags for the given provider.
-func (c *Core) GetMediaTags(provider string) ([]media.Tag, error) {
-	out := []media.Tag{}
-	if err := c.q.GetMediaTags.Select(&out, provider); err != nil {
->>>>>>> upstream/master
 		return nil, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorFetching", "name", "{globals.terms.tags}", "error", pqErrMsg(err)))
 	}
@@ -130,7 +115,6 @@ func (c *Core) InsertMedia(fileName, thumbName, contentType string, meta models.
 	return c.GetMedia(newID, "", "", s)
 }
 
-<<<<<<< HEAD
 // UpdateMedia updates a media item's tags. The update is scoped to the
 // active provider and, when prefixes is non-empty, to the media filename
 // prefixes the user is permitted to see (same guard as QueryMedia), so a
@@ -141,11 +125,6 @@ func (c *Core) UpdateMedia(id int, provider string, prefixes, tags []string, s m
 		prefixes = []string{}
 	}
 	res, err := c.q.UpdateMedia.Exec(id, provider, pq.StringArray(prefixes), pq.StringArray(normalizeTags(tags)))
-=======
-// UpdateMedia updates a media item's tags.
-func (c *Core) UpdateMedia(id int, tags []string, s media.Store) (media.Media, error) {
-	res, err := c.q.UpdateMedia.Exec(id, pq.StringArray(normalizeTags(tags)))
->>>>>>> upstream/master
 	if err != nil {
 		return media.Media{}, echo.NewHTTPError(http.StatusInternalServerError,
 			c.i18n.Ts("globals.messages.errorUpdating", "name", "{globals.terms.media}", "error", pqErrMsg(err)))

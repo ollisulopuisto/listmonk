@@ -31,15 +31,12 @@
 			<label data-field>
 				{{ $root.L.T "globals.terms.tags" }}
 				<ot-taginput x-effect="$el.value = form.tags" @input="form.tags = normalizeTags($el.value)"><input name="tags" placeholder="{{ $root.L.T "globals.terms.tags" }}" maxlength="50" /></ot-taginput>
-<<<<<<< HEAD
 			</label>
 
 			<label data-field>
 				{{ $root.L.T "lists.subjectPrefix" }}
 				<input name="subject_prefix" maxlength="200" placeholder="[List name]" x-model="form.subject_prefix" />
 				<small data-hint>{{ $root.L.T "lists.subjectPrefixHelp" }}</small>
-=======
->>>>>>> upstream/master
 			</label>
 
 			<label data-field>
