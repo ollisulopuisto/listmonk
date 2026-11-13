@@ -121,8 +121,8 @@ jobs:
 
           # Fork workflows stay as they are on master; upstream's are not taken.
           if ! git diff --quiet origin/master HEAD -- .github/workflows/; then
-            git checkout origin/master -- .github/workflows/
-            git clean -fd .github/workflows/
+            # Also removes workflow files that upstream added.
+            git restore --source=origin/master --staged --worktree -- .github/workflows/
             git commit -m "sync: keep fork workflows ($DATE_TAG)"
           fi
 
