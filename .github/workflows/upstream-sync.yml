@@ -9,8 +9,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # One sync at a time: the "is a sync PR/issue already open" checks and the create
-# calls are not atomic, so scheduled and manual runs must not overlap. A queued
-# run waits instead of being cancelled.
+# calls are not atomic, so scheduled and manual runs must not overlap. A running
+# sync is never cancelled. GitHub keeps only one pending run per group, so a run
+# queued behind it can be replaced by a newer one; that is fine here because every
+# run merges whatever upstream/master is at that moment.
 concurrency:
   group: upstream-sync
   cancel-in-progress: false
