@@ -8,6 +8,13 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# One sync at a time: the "is a sync PR/issue already open" checks and the create
+# calls are not atomic, so scheduled and manual runs must not overlap. A queued
+# run waits instead of being cancelled.
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -58,7 +65,9 @@ jobs:
       - name: Sync and validate upstream changes
         if: steps.check_upstream.outputs.new_commits != '0'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Opening the PR with the built-in GITHUB_TOKEN would not start its
+          # pull_request checks; use the same PAT as the push when it is set.
+          GH_TOKEN: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
         run: |
           DATE_TAG=$(date +'%Y-%m-%d')
           BRANCH_TAG=$(date +'%Y%m%d-%H%M%S')
