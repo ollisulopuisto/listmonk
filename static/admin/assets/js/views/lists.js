@@ -104,7 +104,10 @@ function component(list = null) {
         optin: this.form.optin,
         status: this.form.status,
         tags: u.normalizeTags(this.form.tags),
+<<<<<<< HEAD
         subject_prefix: this.form.subject_prefix || '',
+=======
+>>>>>>> upstream/master
         description: this.form.description || '',
       };
     },

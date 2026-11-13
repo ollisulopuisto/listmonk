@@ -51,7 +51,11 @@ func (a *App) ViewMedia(c *echo.Context) error {
 		return err
 	}
 
+<<<<<<< HEAD
 	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+=======
+	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider)
+>>>>>>> upstream/master
 	if err != nil {
 		return err
 	}
@@ -74,7 +78,11 @@ func (a *App) ViewMediaFragment(c *echo.Context) error {
 		return err
 	}
 
+<<<<<<< HEAD
 	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+=======
+	tags, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider)
+>>>>>>> upstream/master
 	if err != nil {
 		return err
 	}
@@ -90,6 +98,7 @@ func (a *App) ViewMediaFragment(c *echo.Context) error {
 	return c.Render(http.StatusOK, "admin-media-fragment", data)
 }
 
+<<<<<<< HEAD
 // getMediaPrefixes returns the media prefixes permitted for the user.
 func getMediaPrefixes(user auth.User) []string {
 	var prefixes []string
@@ -111,13 +120,19 @@ func getMediaPrefixes(user auth.User) []string {
 	return prefixes
 }
 
+=======
+>>>>>>> upstream/master
 // getMedia queries paginated media items from the DB.
 func (a *App) getMedia(c *echo.Context) ([]media.Media, models.PageProps, error) {
 	q := makeQuery(c.Request().URL.Query(), mediaQueryDefaults)
 	prefixes := getMediaPrefixes(auth.GetUser(c))
 
 	pg := a.pg.NewFromURL(q)
+<<<<<<< HEAD
 	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), prefixes, q["tag"], pg.Offset, pg.Limit)
+=======
+	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, q.Get("query"), q["tag"], pg.Offset, pg.Limit)
+>>>>>>> upstream/master
 	if err != nil {
 		return nil, models.PageProps{}, err
 	}
@@ -265,7 +280,11 @@ func (a *App) GetAllMedia(c *echo.Context) error {
 	)
 
 	// Fetch the media items from the DB.
+<<<<<<< HEAD
 	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, prefixes, c.Request().URL.Query()["tag"], pg.Offset, pg.Limit)
+=======
+	res, total, err := a.core.QueryMedia(a.cfg.MediaUpload.Provider, a.media, query, c.Request().URL.Query()["tag"], pg.Offset, pg.Limit)
+>>>>>>> upstream/master
 	if err != nil {
 		return err
 	}
@@ -296,7 +315,11 @@ func (a *App) GetMedia(c *echo.Context) error {
 
 // GetMediaTags returns media tags and their counts.
 func (a *App) GetMediaTags(c *echo.Context) error {
+<<<<<<< HEAD
 	out, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)))
+=======
+	out, err := a.core.GetMediaTags(a.cfg.MediaUpload.Provider)
+>>>>>>> upstream/master
 	if err != nil {
 		return err
 	}
@@ -314,7 +337,11 @@ func (a *App) UpdateMedia(c *echo.Context) error {
 		return err
 	}
 
+<<<<<<< HEAD
 	out, err := a.core.UpdateMedia(getID(c), a.cfg.MediaUpload.Provider, getMediaPrefixes(auth.GetUser(c)), m.Tags, a.media)
+=======
+	out, err := a.core.UpdateMedia(getID(c), m.Tags, a.media)
+>>>>>>> upstream/master
 	if err != nil {
 		return err
 	}
