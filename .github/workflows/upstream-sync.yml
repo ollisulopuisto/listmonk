@@ -11,6 +11,7 @@ env:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   sync:
@@ -62,69 +63,83 @@ jobs:
           DATE_TAG=$(date +'%Y-%m-%d')
           BRANCH_TAG=$(date +'%Y%m%d-%H%M%S')
           SYNC_BRANCH="sync/upstream-$BRANCH_TAG"
+          UPSTREAM_SHA=$(git rev-parse upstream/master)
+          ISSUE_TITLE="Upstream sync blocked"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          # A sync PR that is still open means a human has not looked at the last
+          # one yet. Do not stack another one on top of it.
+          OPEN_SYNC_PRS=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base master \
+            --json headRefName --jq '[.[] | select(.headRefName | startswith("sync/upstream-"))] | length')
+          if [ "$OPEN_SYNC_PRS" -gt 0 ]; then
+            echo "::notice::An upstream sync PR is already open; skipping this run."
+            exit 0
+          fi
+
+          # Record why the sync cannot go ahead in ONE open issue (updated in place,
+          # so a daily run does not pile up issues or comments). Nothing is pushed:
+          # a half-merged tree with conflict markers must never reach a branch.
+          report_blocked() {
+            local reason="$1" details="$2"
+            local body existing
+            body=$(printf '%s\n\n%s\n\nUpstream commit: `%s`\nWorkflow run: %s\nLast checked: %s\n\nThe daily sync leaves master untouched while this issue is open. Merge `upstream/master` by hand (a real merge commit, so the merge base stays current), then close this issue.\n' \
+              "$reason" "$details" "$UPSTREAM_SHA" "$RUN_URL" "$DATE_TAG")
+            existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" \
+              --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty")
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+              echo "::warning::Upstream sync blocked; updated issue #$existing."
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body"
+              echo "::warning::Upstream sync blocked; opened an issue."
+            fi
+          }
 
           echo "Attempting real merge of upstream/master into master..."
 
-          # Attempt merge
-          if ! git merge upstream/master --no-edit -m "Merge upstream/master ($DATE_TAG) — sync upstream changes"; then
-            echo "::error::Merge conflict encountered when merging upstream/master."
-            git merge --abort || true
+          # Merge on a branch, never on master, so nothing can reach master from here.
+          git checkout -b "$SYNC_BRANCH" origin/master
 
-            # Create branch from master and merge upstream/master preserving fork workflows
-            git checkout -b "$SYNC_BRANCH" origin/master
-            git merge upstream/master --no-edit -m "Merge upstream/master ($DATE_TAG) — sync upstream changes" || true
+          if ! git merge upstream/master --no-ff --no-edit -m "Merge upstream/master ($DATE_TAG) — sync upstream changes"; then
+            CONFLICTS=$(git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/')
+            git merge --abort || true
+            echo "::warning::Merge conflict encountered when merging upstream/master."
+            report_blocked "Merging \`upstream/master\` into \`master\` conflicts in these files:" "$CONFLICTS"
+            exit 0
+          fi
+
+          # Fork workflows stay as they are on master; upstream's are not taken.
+          if ! git diff --quiet origin/master HEAD -- .github/workflows/; then
             git checkout origin/master -- .github/workflows/
             git clean -fd .github/workflows/
-            git add -A
-            git commit -m "sync: upstream/master merge conflict ($DATE_TAG)" || true
-            git push origin "$SYNC_BRANCH"
-
-            gh pr create --repo ollisulopuisto/listmonk \
-              --base master \
-              --head "$SYNC_BRANCH" \
-              --title "sync: upstream/master merge conflict ($DATE_TAG)" \
-              --body "Automated daily upstream sync encountered merge conflicts when trying to merge \`upstream/master\` into \`master\`. Please resolve conflicts manually following the editor integrity and migration guidelines in GEMINI.md."
-
-            exit 1
+            git commit -m "sync: keep fork workflows ($DATE_TAG)"
           fi
 
           echo "Merge completed cleanly. Running integrity checks..."
 
           echo "Running Go tests..."
           if ! go test ./...; then
-            echo "::error::Go tests failed after merging upstream/master."
-            git checkout -b "$SYNC_BRANCH"
-            git checkout origin/master -- .github/workflows/
-            git clean -fd .github/workflows/
-            git commit -am "sync: Go test failure after upstream merge ($DATE_TAG)" || true
-            git push origin "$SYNC_BRANCH"
-
-            gh pr create --repo ollisulopuisto/listmonk \
-              --base master \
-              --head "$SYNC_BRANCH" \
-              --title "sync: Go test failure after upstream merge ($DATE_TAG)" \
-              --body "Go tests failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
-
-            exit 1
+            report_blocked "The merge is clean but \`go test ./...\` fails after it." "See the workflow run for the failing tests."
+            exit 0
           fi
 
           echo "Running SSR admin frontend dependencies and build..."
           if ! (cd static/admin && bun install --frozen-lockfile && bun run build); then
-            echo "::error::SSR admin frontend build failed after merging upstream/master."
-            git checkout -b "$SYNC_BRANCH"
-            git checkout origin/master -- .github/workflows/
-            git clean -fd .github/workflows/
-            git commit -am "sync: Frontend build failure after upstream merge ($DATE_TAG)" || true
-            git push origin "$SYNC_BRANCH"
-
-            gh pr create --repo ollisulopuisto/listmonk \
-              --base master \
-              --head "$SYNC_BRANCH" \
-              --title "sync: Frontend build failure after upstream merge ($DATE_TAG)" \
-              --body "SSR admin frontend build failed after merging \`upstream/master\` into \`master\`. Manual resolution required."
-
-            exit 1
+            report_blocked "The merge is clean but the SSR admin frontend build fails after it." "See the workflow run for the build output."
+            exit 0
           fi
 
-          echo "All checks passed! Pushing merged master to origin..."
-          git push origin master
+          echo "All checks passed! Opening a PR for the merged upstream changes..."
+          git push origin "$SYNC_BRANCH"
+          gh pr create --repo "$GITHUB_REPOSITORY" \
+            --base master \
+            --head "$SYNC_BRANCH" \
+            --title "sync: upstream/master ($DATE_TAG)" \
+            --body "Clean merge of \`upstream/master\` (\`$UPSTREAM_SHA\`) into \`master\`. Go tests and the admin frontend build passed in the sync run. Merge it with a merge commit (not squash) so the merge base stays current."
+
+          # The sync is unblocked again: close the tracking issue if one is open.
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" \
+            --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty")
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo "$GITHUB_REPOSITORY" --comment "The upstream merge is clean again; see the sync PR."
+          fi
