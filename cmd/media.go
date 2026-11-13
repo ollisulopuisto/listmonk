@@ -92,23 +92,7 @@ func (a *App) ViewMediaFragment(c *echo.Context) error {
 
 // getMediaPrefixes returns the media prefixes permitted for the user.
 func getMediaPrefixes(user auth.User) []string {
-	var prefixes []string
-	if hasAllLists, permittedLists := user.GetPermittedLists(auth.PermTypeGet | auth.PermTypeManage); !hasAllLists {
-		for _, id := range permittedLists {
-			prefixes = append(prefixes, fmt.Sprintf("list-%d/%%", id))
-			prefixes = append(prefixes, fmt.Sprintf("list-%d-%%", id))
-		}
-
-		// Always allow access to a "public" namespace.
-		prefixes = append(prefixes, "public/%", "public-%")
-
-		// If the user has no permitted lists and thus no prefixes,
-		// force a dummy prefix to ensure they see nothing (instead of everything).
-		if len(prefixes) == 0 {
-			prefixes = []string{"__none__"}
-		}
-	}
-	return prefixes
+	return auth.MediaPrefixes(&user)
 }
 
 // getMedia queries paginated media items from the DB.

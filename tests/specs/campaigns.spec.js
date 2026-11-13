@@ -317,6 +317,26 @@ test('rejects malformed JSON without overwriting saved metadata', async ({ page 
   }
 });
 
+test('clone keeps a future send_at and drops a past one', async ({ page }) => {
+  const sendAt = new Date(Date.now() + 2 * 86400 * 1000).toISOString();
+  const future = await create(page, { name: 'Scheduled future', send_at: sendAt });
+  const past = await create(page, { name: 'Scheduled past', send_at: sendAt });
+  psql(`UPDATE campaigns SET send_at = NOW() - INTERVAL '1 day' WHERE id = ${past.id};`);
+  await page.goto(CAMPAIGNS);
+  const cloneOf = async (c, name) => {
+    page.once('dialog', (dialog) => dialog.accept(name));
+    await menu(page, c.name, 'Clone');
+    await expect(page).toHaveURL(/\/campaigns\/\d+$/);
+    const clone = await campaign(page, Number(new URL(page.url()).pathname.split('/').pop()));
+    await page.goto(CAMPAIGNS);
+    return clone;
+  };
+  const f = await cloneOf(future, 'Clone future');
+  expect(new Date(f.send_at).getTime()).toBe(new Date(sendAt).getTime());
+  const p = await cloneOf(past, 'Clone past');
+  expect(p.send_at).toBeNull();
+});
+
 test('clones full content into a draft and cancels cloning and deletion', async ({ page }) => {
   const c = await create(page, { tags: ['clone'], headers: [{ 'X-Custom': 'copy' }],
     attribs: { edition: 2 }, altbody: 'Alternative', lists: [1, 2] });

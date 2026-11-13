@@ -76,12 +76,15 @@ function component() {
         altbody: c.altbody,
         headers: c.headers,
         attribs: c.attribs,
-        send_at: c.send_at,
         archive: c.archive,
         archive_template_id: c.archive_template_id,
         archive_meta: c.archive_meta,
         media: (c.media || []).map((m) => m.id),
       };
+      // Keep a still-future delivery date; past dates are rejected on create.
+      if (c.send_at && new Date(c.send_at).getTime() > Date.now()) {
+        data.send_at = c.send_at;
+      }
       if (c.archive) {
         data.archive_slug = `${newName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString().slice(-4)}`;
       }
