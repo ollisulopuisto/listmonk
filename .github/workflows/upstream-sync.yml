@@ -96,7 +96,7 @@ jobs:
             body=$(printf '%s\n\n%s\n\nUpstream commit: `%s`\nWorkflow run: %s\nLast checked: %s\n\nThe daily sync leaves master untouched while this issue is open. Merge `upstream/master` by hand (a real merge commit, so the merge base stays current), then close this issue.\n' \
               "$reason" "$details" "$UPSTREAM_SHA" "$RUN_URL" "$DATE_TAG")
             existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" \
-              --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty")
+              --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty" 2>/dev/null || true)
             # Issues are disabled on this fork, so the lookups and writes can fail.
             # Never lose the reason: it always goes to the job summary, and the run
             # fails (red, so it shows up) if no issue could be written.
@@ -121,7 +121,7 @@ jobs:
             CONFLICTS=$(git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/')
             git merge --abort || true
             echo "::warning::Merge conflict encountered when merging upstream/master."
-            report_blocked "Merging \`upstream/master\` into \`master\` conflicts in these files:" "$CONFLICTS" || exit 1
+            report_blocked "Merging \`upstream/master\` into \`master\` conflicts in these files:" "$CONFLICTS"
             exit 0
           fi
 
@@ -136,13 +136,13 @@ jobs:
 
           echo "Running Go tests..."
           if ! go test ./...; then
-            report_blocked "The merge is clean but \`go test ./...\` fails after it." "See the workflow run for the failing tests." || exit 1
+            report_blocked "The merge is clean but \`go test ./...\` fails after it." "See the workflow run for the failing tests."
             exit 0
           fi
 
           echo "Running SSR admin frontend dependencies and build..."
           if ! (cd static/admin && bun install --frozen-lockfile && bun run build); then
-            report_blocked "The merge is clean but the SSR admin frontend build fails after it." "See the workflow run for the build output." || exit 1
+            report_blocked "The merge is clean but the SSR admin frontend build fails after it." "See the workflow run for the build output."
             exit 0
           fi
 
