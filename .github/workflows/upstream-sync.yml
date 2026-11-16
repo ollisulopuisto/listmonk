@@ -96,14 +96,20 @@ jobs:
             body=$(printf '%s\n\n%s\n\nUpstream commit: `%s`\nWorkflow run: %s\nLast checked: %s\n\nThe daily sync leaves master untouched while this issue is open. Merge `upstream/master` by hand (a real merge commit, so the merge base stays current), then close this issue.\n' \
               "$reason" "$details" "$UPSTREAM_SHA" "$RUN_URL" "$DATE_TAG")
             existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" \
-              --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty")
+              --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty" 2>/dev/null || true)
+            # Issues are disabled on this fork, so the lookups and writes can fail.
+            # Never lose the reason: it always goes to the job summary, and the run
+            # fails (red, so it shows up) if no issue could be written.
+            printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
             if [ -n "$existing" ]; then
-              gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
-              echo "::warning::Upstream sync blocked; updated issue #$existing."
+              gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body" \
+                && echo "::warning::Upstream sync blocked; updated issue #$existing." && return 0
             else
-              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body"
-              echo "::warning::Upstream sync blocked; opened an issue."
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body" \
+                && echo "::warning::Upstream sync blocked; opened an issue." && return 0
             fi
+            echo "::error::Upstream sync blocked and no issue could be written (issues disabled?). Reason is in the job summary."
+            return 1
           }
 
           echo "Attempting real merge of upstream/master into master..."
@@ -150,7 +156,7 @@ jobs:
 
           # The sync is unblocked again: close the tracking issue if one is open.
           EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$ISSUE_TITLE\" in:title" \
-            --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty")
+            --json number,title --jq "[.[] | select(.title == \"$ISSUE_TITLE\")][0].number // empty" 2>/dev/null || true)
           if [ -n "$EXISTING" ]; then
-            gh issue close "$EXISTING" --repo "$GITHUB_REPOSITORY" --comment "The upstream merge is clean again; see the sync PR."
+            gh issue close "$EXISTING" --repo "$GITHUB_REPOSITORY" --comment "The upstream merge is clean again; see the sync PR." || true
           fi
