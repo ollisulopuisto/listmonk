@@ -19,8 +19,9 @@ env:
 jobs:
   review:
     if: >-
-      (github.event.action == 'labeled' && github.event.label.name == 'hodor-review') ||
-      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'hodor-review'))
+      github.actor == github.repository_owner &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'hodor-review') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'hodor-review')))
     runs-on: ubuntu-latest
     steps:
       - name: Run Hodor review
