@@ -432,6 +432,7 @@ func (a *App) PreviewCampaign(c *echo.Context) error {
 
 	// Plaintext headers for plain body.
 	if camp.ContentType == models.CampaignContentTypePlain {
+		c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 		return c.String(http.StatusOK, string(msg.Body()))
 	}
 
@@ -473,7 +474,7 @@ func (a *App) PreviewCampaignArchive(c *echo.Context) error {
 			makeMsgTpl(a.i18n.T("globals.terms.error"), "", a.i18n.Ts("public.errorFetchingCampaign")))
 	}
 
-	return renderSandboxedHTML(c, string(msg.Body()))
+	return renderSandboxedHTML(c, transformArchiveToTxt(msg))
 }
 
 // CampaignContent handles campaign content (body) format conversions.
@@ -995,8 +996,7 @@ func (a *App) makeOptinCampaignMessage(o campReq) (campReq, error) {
 	for _, l := range lists {
 		listIDs.Add("l", l.UUID)
 	}
-	// optinURLFunc := template.URL("{{ OptinURL }}?" + listIDs.Encode())
-	optinURLAttr := template.HTMLAttr(fmt.Sprintf(`href="{{ OptinURL }}%s"`, listIDs.Encode()))
+	optinURLAttr := template.HTMLAttr(fmt.Sprintf(`href="{{ OptinURL . %q }}"`, listIDs.Encode()))
 
 	// Prepare sample opt-in message for the campaign.
 	var b bytes.Buffer

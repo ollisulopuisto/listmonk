@@ -21,6 +21,7 @@ type Settings struct {
 	AppNotifyEmails               []string `json:"app.notify_emails"`
 	AppCampaignSubjectPrefix      string   `json:"app.campaign_subject_prefix"`
 	EnablePublicSubPage           bool     `json:"app.enable_public_subscription_page"`
+	EnablePublicSubAPI            bool     `json:"app.enable_public_subscription_api"`
 	EnablePublicArchive           bool     `json:"app.enable_public_archive"`
 	EnablePublicArchiveRSSContent bool     `json:"app.enable_public_archive_rss_content"`
 	ShowOptinPage                 bool     `json:"app.show_optin_page"`
@@ -81,6 +82,10 @@ type Settings struct {
 
 	SecuritySessionDuration string   `json:"security.session_duration"`
 	SecurityTrustedURLs     []string `json:"security.trusted_urls"`
+	SecuritySignedLinks     struct {
+		Enabled bool   `json:"enabled"`
+		TTL     string `json:"ttl"`
+	} `json:"security.signed_links"`
 
 	UploadProvider             string   `json:"upload.provider"`
 	UploadExtensions           []string `json:"upload.extensions"`
