@@ -91,6 +91,19 @@ var regTplFuncs = []regTplFunc{
 		replace: `{{ TrackLink "$1" . }}`,
 	},
 
+	// Backwards compatibility for the previously documented preference-link shorthand.
+	{
+		regExp:  regexp.MustCompile(`{{\s*UnsubscribeURL(?:\s+\.)?\s*}}\?manage=true`),
+		replace: `{{ ManageURL . }}`,
+	},
+
+	// Existing opt-in campaign bodies append list UUIDs to the template tag.
+	// Include them in URL generation.
+	{
+		regExp:  regexp.MustCompile(`{{\s*OptinURL(?:\s+\.)?\s*}}(l=[a-fA-F0-9-]+(?:(?:&amp;|&)l=[a-fA-F0-9-]+)*)`),
+		replace: `{{ OptinURL . "$1" }}`,
+	},
+
 	{
 		regExp:  regexp.MustCompile(`{{(\s+)?(TrackView|UnsubscribeURL|ManageURL|OptinURL|MessageURL)(\s+)?}}`),
 		replace: `{{ $2 . }}`,
@@ -122,7 +135,14 @@ func PrepareTplFuncs(body string) string {
 		body = regTplFuncs[1].regExp.ReplaceAllString(body, regTplFuncs[1].replace)
 	}
 	if hasSpecialTag {
-		body = regTplFuncs[2].regExp.ReplaceAllString(body, regTplFuncs[2].replace)
+		// Apply every special-tag rule in regTplFuncs order: the specific
+		// rules (manage-link backwards compatibility, OptinURL with list
+		// UUIDs) must run before the generic shorthand rule that rewrites
+		// the bare tags. Upstream appends rules here, so do not hardcode
+		// one index.
+		for _, r := range regTplFuncs[2:] {
+			body = r.regExp.ReplaceAllString(body, r.replace)
+		}
 	}
 
 	return body

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,7 @@ import (
 	"github.com/knadh/listmonk/internal/messenger/postback"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/internal/subimporter"
+	"github.com/knadh/listmonk/internal/urlsign"
 	"github.com/knadh/listmonk/models"
 	"github.com/knadh/stuffbin"
 	"github.com/labstack/echo/v5"
@@ -75,11 +77,14 @@ type UrlConfig struct {
 	FaviconURL   string `koanf:"favicon_url"`
 	LoginURL     string `koanf:"login_url"`
 	UnsubURL     string
+	ManageURL    string
 	LinkTrackURL string
 	ViewTrackURL string
 	OptinURL     string
 	MessageURL   string
 	ArchiveURL   string
+
+	Signer *urlsign.Signer
 }
 
 // Config contains static, constant config values required by arbitrary handlers and functions.
@@ -90,6 +95,7 @@ type Config struct {
 	CampaignSubjectPrefix         string   `koanf:"campaign_subject_prefix"`
 	NotifyEmails                  []string `koanf:"notify_emails"`
 	EnablePublicSubPage           bool     `koanf:"enable_public_subscription_page"`
+	EnablePublicSubAPI            bool     `koanf:"enable_public_subscription_api"`
 	EnablePublicArchive           bool     `koanf:"enable_public_archive"`
 	EnablePublicArchiveRSSContent bool     `koanf:"enable_public_archive_rss_content"`
 	ShowOptinPage                 bool     `koanf:"show_optin_page"`
@@ -136,6 +142,11 @@ type Config struct {
 		} `koanf:"captcha"`
 
 		TrustedURLs []string `koanf:"trusted_urls"`
+
+		SignedLinks struct {
+			Enabled bool   `koanf:"enabled"`
+			TTL     string `koanf:"ttl"`
+		} `koanf:"signed_links"`
 	} `koanf:"security"`
 
 	Appearance struct {
@@ -498,12 +509,14 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 
 	// rootPath is the path component of the root URL set in config.
 	// It's used as the base path for all admin/static asset URLs.
-	var rootPath string
+	var rootPath, basePath string
 	if u, err := url.Parse(root); err == nil {
-		rootPath = "/" + strings.TrimSuffix(u.Path, "/")
+		basePath = strings.TrimSuffix(u.Path, "/")
+		rootPath = "/" + basePath
 	}
 
 	return &UrlConfig{
+		Signer:     initURLSigner(ko, basePath),
 		RootURL:    root,
 		RootPath:   rootPath,
 		LogoURL:    ko.String("app.logo_url"),
@@ -513,6 +526,9 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 		// Static URLS.
 		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}
 		UnsubURL: fmt.Sprintf("%s/subscription/%%s/%%s", root),
+
+		// url.com/subscription/{campaign_uuid}/{subscriber_uuid}?manage=true
+		ManageURL: fmt.Sprintf("%s/subscription/%%s/%%s?manage=true", root),
 
 		// url.com/subscription/optin/{subscriber_uuid}
 		OptinURL: fmt.Sprintf("%s/subscription/optin/%%s?%%s", root),
@@ -529,6 +545,22 @@ func initUrlConfig(ko *koanf.Koanf) *UrlConfig {
 		// url.com/campaign/{campaign_uuid}/{subscriber_uuid}/px.png
 		ViewTrackURL: fmt.Sprintf("%s/campaign/%%s/%%s/px.png", root),
 	}
+}
+
+// initURLSigner inits the URL signer with the secret key from config.
+func initURLSigner(ko *koanf.Koanf, basePath string) *urlsign.Signer {
+	secret, err := hex.DecodeString(ko.String("internal.secret_key"))
+	if err != nil || len(secret) < 32 {
+		lo.Fatal("invalid `internal.secret_key`")
+	}
+
+	ttl := ko.Duration("security.signed_links.ttl")
+	if ttl < time.Second && ko.String("security.signed_links.ttl") != "0" {
+		lo.Printf("invalid `security.signed_links.ttl`. Using default '120 days': %v", ko.Get("security.signed_links.ttl"))
+		ttl = 120 * 24 * time.Hour
+	}
+
+	return urlsign.New(secret, ko.Bool("security.signed_links.enabled"), ttl, basePath)
 }
 
 // initConstConfig initializes the app's global constants from the given koanf instance.
@@ -669,6 +701,7 @@ func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlCon
 		IndividualTracking:    ko.Bool("privacy.individual_tracking"),
 		DisableTracking:       ko.Bool("privacy.disable_tracking"),
 		UnsubURL:              u.UnsubURL,
+		ManageURL:             u.ManageURL,
 		OptinURL:              u.OptinURL,
 		LinkTrackURL:          u.LinkTrackURL,
 		ViewTrackURL:          u.ViewTrackURL,
@@ -681,7 +714,7 @@ func initCampaignManager(msgrs []manager.Messenger, q *models.Queries, u *UrlCon
 		SlidingWindowRate:     ko.Int("app.message_sliding_window_rate"),
 		ScanInterval:          time.Second * 5,
 		ScanCampaigns:         !ko.Bool("passive"),
-	}, newManagerStore(q, co, md), i, lo)
+	}, newManagerStore(q, co, md), i, u.Signer, lo)
 
 	// Attach all messengers to the campaign manager.
 	for _, m := range msgrs {
