@@ -36,6 +36,12 @@ import (
 const (
 	// commitBatchSize is the number of inserts to commit in a single SQL transaction.
 	commitBatchSize = 10000
+
+	// Max record size for one record (for memory safety).
+	maxRecordBytes = 100 * 1024
+
+	// Max disk usage per ZIP import (for memory safety).
+	maxExtractedBytes = 1 << 30
 )
 
 // Various import statuses.
@@ -49,6 +55,14 @@ const (
 	ModeSubscribe = "subscribe"
 	ModeBlocklist = "blocklist"
 )
+
+// rowReader is a simple abstraction that limites bytes read per row in CSV parsing
+// to avoid excessive memory usage from very large CSV records.
+type rowReader struct {
+	io.Reader
+	offset int64
+	read   int64
+}
 
 // Importer represents the bulk CSV subscriber import system.
 type Importer struct {
@@ -100,6 +114,7 @@ type SessionOpt struct {
 	OverwriteSubStatus bool   `json:"overwrite_subscription_status"`
 	Delim              string `json:"delim"`
 	ListIDs            []int  `json:"lists"`
+	PermittedListIDs   []int  `json:"-"`
 }
 
 // Status represents statistics from an ongoing import session.
@@ -129,7 +144,9 @@ type importStatusTpl struct {
 var (
 	// ErrIsImporting is thrown when an import request is made while an
 	// import is already running.
-	ErrIsImporting = errors.New("import is already running")
+	ErrIsImporting    = errors.New("import is already running")
+	errRecordTooLarge = errors.New("CSV record exceeds 100 KiB")
+	errZIPTooLarge    = errors.New("ZIP expanded data exceeds 1 GiB")
 
 	csvHeaders = map[string]bool{
 		"email":      true,
@@ -278,6 +295,7 @@ func (im *Importer) sendNotif(status string) error {
 func (s *Session) Start() {
 	var (
 		tx    *sql.Tx
+		res   sql.Result
 		stmt  *sql.Stmt
 		err   error
 		total = 0
@@ -311,15 +329,26 @@ func (s *Session) Start() {
 		}
 
 		if s.opt.Mode == ModeSubscribe {
-			_, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs, pq.Array(listIDs), s.opt.SubStatus, s.opt.OverwriteUserInfo, s.opt.OverwriteSubStatus)
+			res, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs, pq.Array(listIDs), s.opt.SubStatus, s.opt.OverwriteUserInfo, s.opt.OverwriteSubStatus, pq.Array(s.opt.PermittedListIDs))
 		} else if s.opt.Mode == ModeBlocklist {
-			_, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs)
+			res, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs)
 		}
 		if err != nil {
 			s.log.Printf("error executing insert: %v", err)
 			tx.Rollback()
 			break
 		}
+
+		// Skip blocklist queries membership check as the count can be 0.
+		if n, _ := res.RowsAffected(); s.opt.Mode == ModeSubscribe && n == 0 {
+			s.log.Printf("skipping '%s': subscriber outside permitted lists", sub.Email)
+			if cur == 0 {
+				tx.Rollback()
+			}
+
+			continue
+		}
+
 		cur++
 		total++
 
@@ -411,7 +440,14 @@ func (s *Session) ExtractZIP(srcPath string, maxCSVs int) (string, []string, err
 		return "", nil, err
 	}
 
-	files := make([]string, 0, len(z.File))
+	defer func() {
+		if failed {
+			os.RemoveAll(dir)
+		}
+	}()
+
+	var extracted int64
+	files := make([]string, 0, maxCSVs)
 	for _, f := range z.File {
 		fName := f.FileInfo().Name()
 
@@ -430,6 +466,9 @@ func (s *Session) ExtractZIP(srcPath string, maxCSVs int) (string, []string, err
 		// Sanitize the file name to prevent ZIP slip path traversal.
 		fName = filepath.Base(fName)
 
+		if f.UncompressedSize64 > uint64(maxExtractedBytes-extracted) {
+			return "", nil, errZIPTooLarge
+		}
 		s.log.Printf("extracting '%s'", fName)
 		src, err := f.Open()
 		if err != nil {
@@ -445,14 +484,19 @@ func (s *Session) ExtractZIP(srcPath string, maxCSVs int) (string, []string, err
 		}
 		defer out.Close()
 
-		if _, err := io.Copy(out, src); err != nil {
+		n, err := io.Copy(out, io.LimitReader(src, maxExtractedBytes-extracted+1))
+		extracted += n
+		if err == nil && extracted > maxExtractedBytes {
+			err = errZIPTooLarge
+		}
+		if err != nil {
 			s.log.Printf("error extracting to '%s/%s': '%v'", dir, fName, err)
 			return "", nil, err
 		}
 		s.log.Printf("extracted '%s'", fName)
 
 		files = append(files, fName)
-		if len(files) > maxCSVs {
+		if len(files) >= maxCSVs {
 			s.log.Printf("won't extract any more files. Maximum is %d", maxCSVs)
 			break
 		}
@@ -507,11 +551,12 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 
 	// Rewind, now that we've done a linecount on the same handler.
 	_, _ = f.Seek(0, 0)
-	rd := csv.NewReader(f)
+	input := &rowReader{Reader: f}
+	rd := csv.NewReader(input)
 	rd.Comma = delim
 
 	// Read the header.
-	csvHdr, err := rd.Read()
+	csvHdr, err := input.ReadRow(rd)
 	if err != nil {
 		s.log.Printf("error reading header from '%s': '%v'", srcPath, err)
 		return err
@@ -540,11 +585,11 @@ func (s *Session) LoadCSV(srcPath string, delim rune) error {
 		default:
 		}
 
-		cols, err := rd.Read()
+		cols, err := input.ReadRow(rd)
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			if err, ok := err.(*csv.ParseError); ok && err.Err == csv.ErrFieldCount {
+			if parseErr, ok := err.(*csv.ParseError); ok && parseErr.Err == csv.ErrFieldCount {
 				s.log.Printf("skipping line %d. %v", i, err)
 				continue
 			} else {
@@ -797,4 +842,30 @@ func makeDomainMap(domains []string) (map[string]struct{}, bool) {
 	}
 
 	return out, hasWildCards
+}
+
+func (r *rowReader) ReadRow(csvReader *csv.Reader) ([]string, error) {
+	r.offset = csvReader.InputOffset()
+	record, err := csvReader.Read()
+	if csvReader.InputOffset()-r.offset > maxRecordBytes {
+		return nil, errRecordTooLarge
+	}
+
+	return record, err
+}
+
+func (r *rowReader) Read(p []byte) (int, error) {
+	remaining := int64(maxRecordBytes+1) - (r.read - r.offset)
+	if remaining <= 0 {
+		return 0, errRecordTooLarge
+	}
+
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+
+	n, err := r.Reader.Read(p)
+	r.read += int64(n)
+
+	return n, err
 }

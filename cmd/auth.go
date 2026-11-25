@@ -27,6 +27,8 @@ import (
 )
 
 const (
+	maxLoginAttemptsPerTTL = 10
+
 	passwordResetTTL = 30 * time.Minute
 	twofaTokenTTL    = 5 * time.Minute
 
@@ -75,6 +77,8 @@ type twofaTpl struct {
 }
 
 var (
+	maxLoginAttemptsTTL = time.Minute
+
 	oidcProviders = map[string]struct{}{
 		"google.com":          {},
 		"microsoftonline.com": {},
@@ -100,6 +104,10 @@ func (a *App) LoginPage(c *echo.Context) error {
 		loginErr = a.doLogin(c)
 		if loginErr == nil {
 			return nil
+		}
+
+		if echo.StatusCode(loginErr) == http.StatusTooManyRequests {
+			return loginErr
 		}
 	}
 
@@ -541,6 +549,11 @@ func (a *App) doLogin(c *echo.Context) error {
 	}
 	if !strHasLen(password, 8, stdInputMaxLen) {
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.invalidFields", "name", "password"))
+	}
+
+	// Limit login attempts per username within the configured window.
+	if !a.throttle.SetWithTTL("login:"+username, maxLoginAttemptsTTL, maxLoginAttemptsPerTTL) {
+		return echo.NewHTTPError(http.StatusTooManyRequests, http.StatusText(http.StatusTooManyRequests))
 	}
 
 	// Log the user in by fetching and verifying credentials from the DB.

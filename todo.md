@@ -38,3 +38,6 @@
     - [ ] Setup GitHub Action for building and pushing to GHCR.
     - [ ] Configure staging deployment.
     - [ ] Implement manual promotion to production.
+
+### Upstream sync review25Nov2026
+- Isolated merge of upstream4f711c7, preserving fork media import, domain checks/benchmarks, URI fast path, template helper, CalVer and RSS script. Both original conflict files resolved. Upload-settings migration and auth throttle are protected merge decisions, no live migration/deploy. Targeted tests required; PostgreSQL integration and runtime remain separate acceptance.
